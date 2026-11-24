@@ -25,11 +25,14 @@ st.set_page_config(
     initial_sidebar_state="expanded",
 )
 
-API_BASE_URL = os.getenv("API_URL", "http://127.0.0.1:8000").strip().rstrip("/")
+API_BASE_URL = os.getenv(
+    "API_URL",
+    "https://compphishapi.onrender.com"
+).strip().rstrip("/")
 API_URL = f"{API_BASE_URL}/scan"
 REQUEST_TIMEOUT = int(os.getenv("REQUEST_TIMEOUT", "90"))
 
-# Demo metrics are synthetic UI preview data. They are never model results.
+# Demo metrics are synthetic UI preview data. They are never model results.S
 DEMO_METRICS = {
     "scans": "2,481",
     "threats": "384",
