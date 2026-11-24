@@ -1,0 +1,4 @@
+Copy your trained model bundle into this directory and name it:
+compphish_hybrid_model.joblib
+
+The model itself is not included in this ZIP because it must be copied from your Google Drive training output.

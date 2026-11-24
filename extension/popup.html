@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>CompPhish</title>
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <main class="card">
+    <header>
+      <div class="logo">CP</div>
+      <div>
+        <h1>CompPhish</h1>
+        <p>Website security scanner</p>
+      </div>
+    </header>
+    <div id="site" class="site">Reading current tab…</div>
+    <button id="scan">Scan current website</button>
+    <section id="result" class="result" aria-live="polite">
+      The backend scaffold is ready. Training-compatible feature extraction must be connected before scanning.
+    </section>
+    <p class="note">Prototype only. A risk score is a model estimate, not proof of malicious activity.</p>
+  </main>
+  <script src="popup.js"></script>
+</body>
+</html>

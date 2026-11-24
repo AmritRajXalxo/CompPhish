@@ -1,0 +1,15 @@
+COMPPHISH — START HERE
+
+1. Extract this folder and open it in VS Code.
+2. Copy your trained model to:
+   models/compphish_hybrid_model.joblib
+3. Read README.md and MODEL_SETUP.md.
+4. Create a Python virtual environment and install requirements.txt.
+5. Start API:
+   uvicorn backend.main:app --reload --host 127.0.0.1 --port 8000
+6. Visit http://127.0.0.1:8000/docs
+
+IMPORTANT:
+The API currently accepts precomputed features. The exact URL and HTML
+feature-extraction formulas must be ported from the original training notebook
+before the Chrome extension can produce trusted live-page predictions.

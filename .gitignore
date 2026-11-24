@@ -1,0 +1,21 @@
+# Python virtual environments
+.venv/
+.venv311/
+venv/
+
+# Python cache
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ipynb_checkpoints/
+
+# Environment variables and secrets
+.env
+.streamlit/secrets.toml
+
+# Operating system
+.DS_Store
+Thumbs.db
+
+# Temporary files
+*.log
