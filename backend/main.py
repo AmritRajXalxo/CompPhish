@@ -16,7 +16,9 @@ app = FastAPI(
     description="Hybrid Multi-Modal Phishing Detection System",
     version="1.1.0",
 )
-
+@app.get("/healthz")
+def health_check():
+    return {"status": "healthy"}
 
 # --------------------------------------------------
 # 2. CORS configuration
