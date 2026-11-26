@@ -339,6 +339,8 @@ elif page == "Live scanner":
             st.markdown(f"<div class='result-hero'><div class='risk-kicker'>HYBRID PHISHING PROBABILITY</div><div class='risk-number' style='color:{tint}'>{hybrid*100:.2f}%</div><div style='color:#8b97ad;font-size:12px'>Risk score {risk:.2f}% · Decision threshold {threshold*100:.0f}%</div><span class='status-tag {badge}'>{status_text}</span></div>", unsafe_allow_html=True)
             st.markdown("<div style='height:10px'></div>", unsafe_allow_html=True)
             st.progress(risk / 100)
+            if data.get("decision_note"):
+                st.info(str(data["decision_note"]))
         with result_cols[1]:
             gauge = go.Figure(go.Indicator(mode="gauge+number", value=risk, number={"suffix": "%", "font": {"color": "#edf2fb", "size": 29}}, gauge={"axis": {"range": [0, 100], "tickcolor": "#748099", "tickfont": {"color": "#748099"}}, "bar": {"color": tint, "thickness": .22}, "bgcolor": "rgba(0,0,0,0)", "borderwidth": 0, "steps": [{"range": [0, 40], "color": "rgba(83,216,232,.08)"}, {"range": [40, 70], "color": "rgba(139,124,255,.10)"}, {"range": [70, 100], "color": "rgba(255,110,131,.10)"}]}))
             st.markdown("<div class='surface'>", unsafe_allow_html=True)
