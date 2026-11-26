@@ -7,6 +7,7 @@ Includes basic protections against unsafe URL fetching.
 
 import ipaddress
 import socket
+import time
 
 import httpx
 from urllib.parse import urljoin, urlparse
@@ -70,6 +71,8 @@ def fetch_webpage(url: str) -> dict:
     """
 
     current_url = url
+    chain = []
+    started = time.monotonic()
 
     headers = {
         "User-Agent": "CompPhishResearchScanner/1.0",
@@ -102,6 +105,9 @@ def fetch_webpage(url: str) -> dict:
                     if not location:
                         raise ValueError("Redirect location is missing.")
 
+                    chain.append(
+                        {"url": current_url, "status": response.status_code}
+                    )
                     current_url = urljoin(current_url, location)
                     continue
 
@@ -141,10 +147,30 @@ def fetch_webpage(url: str) -> dict:
                     errors="replace",
                 )
 
+                chain.append(
+                    {"url": str(response.url), "status": response.status_code}
+                )
+
                 return {
                     "final_url": str(response.url),
                     "html": html,
                     "content_type": content_type,
+                    "redirect_chain": chain,
+                    "status_code": response.status_code,
+                    "load_seconds": round(time.monotonic() - started, 2),
+                    "cookie_count": len(
+                        response.headers.get_list("set-cookie")
+                    ),
+                    "server_header": response.headers.get("server"),
+                    "security_headers": {
+                        name: name in response.headers
+                        for name in (
+                            "strict-transport-security",
+                            "content-security-policy",
+                            "x-frame-options",
+                            "x-content-type-options",
+                        )
+                    },
                 }
 
     raise ValueError("Unable to retrieve webpage.")

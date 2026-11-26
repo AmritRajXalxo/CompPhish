@@ -161,9 +161,9 @@ def probability(value: Any, label: str) -> float:
     return number
 
 
-def scan_website(url: str) -> dict[str, Any]:
+def scan_website(url: str, include_preview: bool = False) -> dict[str, Any]:
     try:
-        response = requests.post(API_URL, json={"url": url}, timeout=REQUEST_TIMEOUT)
+        response = requests.post(API_URL, json={"url": url, "include_preview": include_preview}, timeout=REQUEST_TIMEOUT)
         response.raise_for_status()
     except requests.exceptions.Timeout as exc:
         raise RuntimeError("The scan timed out. Try again in a moment.") from exc
@@ -191,6 +191,123 @@ def scan_website(url: str) -> dict[str, Any]:
     if not isinstance(data["branch_probabilities"], dict):
         raise RuntimeError("branch_probabilities must be a JSON object.")
     return data
+
+
+def esc(value: Any) -> str:
+    return html.escape("—" if value is None or value == "" else str(value))
+
+
+def rows_html(rows: list[tuple[str, Any]]) -> str:
+    return "<div class='surface'>" + "".join(
+        f"<div class='info-row'><span class='info-key'>{html.escape(k)}</span><span class='info-val'>{esc(v)}</span></div>"
+        for k, v in rows
+    ) + "</div>"
+
+
+def section(title: str, meta: str = "") -> None:
+    st.markdown(f"<div class='section-head'><div class='section-title'>{html.escape(title)}</div><div class='section-meta'>{html.escape(meta)}</div></div>", unsafe_allow_html=True)
+
+
+def submit_report(url: str, category: str, comment: str) -> dict[str, Any]:
+    try:
+        resp = requests.post(f"{API_BASE_URL}/report", json={"url": url, "category": category, "comment": comment}, timeout=15)
+        if resp.status_code == 429:
+            raise RuntimeError("Too many reports from your network. Try again later.")
+        resp.raise_for_status()
+        return resp.json()["community_reports"]
+    except requests.exceptions.RequestException as exc:
+        raise RuntimeError(f"Could not send the report: {exc}") from exc
+
+
+def render_scan_details(data: dict[str, Any]) -> None:
+    """Evidence panels shown below the model breakdown (all text is HTML-escaped)."""
+    # --- What we checked + next steps -----------------------------------
+    explanation = data.get("explanation") or []
+    if explanation:
+        section("What we checked", "EVIDENCE BEHIND THE VERDICT")
+        items = "".join(f"<div class='info-row'><span class='info-val' style='text-align:left'>{esc(x)}</span></div>" for x in explanation)
+        st.markdown(f"<div class='surface'>{items}</div>", unsafe_allow_html=True)
+    steps = data.get("next_steps") or []
+    if steps:
+        section("Recommended next steps", "GUIDANCE")
+        items = "".join(f"<div class='info-row'><span class='info-val' style='text-align:left'>• {esc(x)}</span></div>" for x in steps)
+        st.markdown(f"<div class='surface'>{items}</div>", unsafe_allow_html=True)
+
+    # --- Site preview ----------------------------------------------------
+    if data.get("preview_url"):
+        section("Site preview", "SCREENSHOT BY THUM.IO (THIRD PARTY)")
+        st.image(data["preview_url"], width=720)
+
+    # --- Navigation / redirects -----------------------------------------
+    chain = data.get("redirect_chain") or []
+    if chain:
+        section("Navigation path", f"{max(len(chain) - 1, 0)} REDIRECT(S)")
+        st.markdown(rows_html([(f"Step {i + 1} · HTTP {h.get('status')}", h.get("url")) for i, h in enumerate(chain)]), unsafe_allow_html=True)
+
+    # --- Connection security + domain ----------------------------------
+    tls = data.get("tls") or {}
+    trust = data.get("trust_signals") or {}
+    c1, c2 = st.columns(2, gap="medium")
+    with c1:
+        section("Connection security", "TLS CERTIFICATE")
+        if tls.get("status") == "ok" and tls.get("valid"):
+            st.markdown(rows_html([("Certificate", "Valid"), ("Issuer", tls.get("issuer")), ("Issued to", tls.get("subject")), ("Valid until", tls.get("not_after")), ("Days left", tls.get("days_left")), ("Protocol", tls.get("protocol"))]), unsafe_allow_html=True)
+        elif tls.get("status") == "ok":
+            st.markdown(rows_html([("Certificate", "FAILED verification"), ("Reason", tls.get("error"))]), unsafe_allow_html=True)
+        else:
+            st.markdown(rows_html([("Certificate", "Could not be checked")]), unsafe_allow_html=True)
+    with c2:
+        section("Domain age", "RDAP REGISTRATION RECORD")
+        age = trust.get("domain_age_days")
+        st.markdown(rows_html([("Registered domain", trust.get("registered_domain")), ("Age", f"{age} days (~{age / 365:.1f} years)" if isinstance(age, (int, float)) else "Unknown"), ("Established", "Yes" if trust.get("established") else "No / unknown"), ("Shared hosting", "Yes" if trust.get("shared_hosting") else "No")]), unsafe_allow_html=True)
+
+    # --- Threat intelligence + page behaviour ---------------------------
+    t1, t2 = st.columns(2, gap="medium")
+    with t1:
+        section("Threat intelligence", "'NO MATCH' IS NOT 'SAFE'")
+        feeds = (data.get("threat_feeds") or {}).get("sources") or []
+        label = {"match": "LISTED", "no_match": "No match", "unavailable": "Unavailable"}
+        st.markdown(rows_html([(f.get("name"), label.get(f.get("status"), f.get("status"))) for f in feeds] or [("Feeds", "Unavailable")]), unsafe_allow_html=True)
+    with t2:
+        section("Page behaviour", "FROM THE PAGE HTML")
+        beh = data.get("page_behaviour") or {}
+        found = beh.get("findings") or []
+        st.markdown(rows_html([(f.get("severity", "").upper(), f.get("text")) for f in found] or [("Result", "Nothing significant found" if beh.get("status") == "ok" else "Could not be checked")]), unsafe_allow_html=True)
+
+    # --- Statistics + server location + network footprint ---------------
+    stats = data.get("statistics") or {}
+    net = data.get("network_footprint") or {}
+    loc = data.get("server_location") or {}
+    s1, s2 = st.columns(2, gap="medium")
+    with s1:
+        section("Statistics", "FETCHED BY THE SCANNER")
+        st.markdown(rows_html([("Page load", f"{stats.get('load_seconds')} s" if stats.get("load_seconds") is not None else None), ("HTTP status", stats.get("status_code")), ("HTML size", f"{stats.get('html_bytes')} bytes"), ("Resources referenced", net.get("resources")), ("HTTPS share of resources", f"{net.get('https_share')}%" if net.get("https_share") is not None else None), ("Cookies set", stats.get("cookies_set"))]), unsafe_allow_html=True)
+    with s2:
+        section("Server location", "TEAM CYMRU DNS")
+        if loc.get("status") == "ok":
+            st.markdown(rows_html([("IP address", loc.get("ip")), ("Country", loc.get("country")), ("ASN", f"{loc.get('asn')} ({loc.get('asn_name')})" if loc.get("asn_name") else loc.get("asn"))]), unsafe_allow_html=True)
+        else:
+            st.markdown(rows_html([("Location", "Could not be determined")]), unsafe_allow_html=True)
+    section("Network footprint", "ESTIMATED FROM PAGE HTML · NOT A BROWSER TRACE")
+    ext = ", ".join(net.get("external_domains") or []) or None
+    st.markdown(rows_html([("Domains referenced", net.get("domains")), ("IP addresses", net.get("ips")), ("Outbound links", net.get("links")), ("External domains", ext)]), unsafe_allow_html=True)
+
+    # --- Community reports ---------------------------------------------
+    section("Community reports", "OPINIONS, NOT VERIFIED EVIDENCE")
+    cr = st.session_state.get("last_reports") or data.get("community_reports") or {}
+    st.markdown(rows_html([("Reports on this page", cr.get("total", 0)), ("Marked scam", cr.get("scam", 0)), ("Marked safe", cr.get("safe", 0)), ("Other", cr.get("other", 0))]), unsafe_allow_html=True)
+    for r in cr.get("recent") or []:
+        if r.get("comment"):
+            st.caption(f"{r.get('category', '').upper()}: {r['comment']}")
+    with st.form("report_form", clear_on_submit=True):
+        cat = st.selectbox("Report this page as", ["scam", "safe", "other"])
+        note = st.text_input("Optional comment (max 300 characters)", max_chars=300)
+        if st.form_submit_button("Leave a report"):
+            try:
+                st.session_state["last_reports"] = submit_report(data.get("final_url") or data.get("submitted_url", ""), cat, note)
+                st.success("Thanks, your report was saved.")
+            except RuntimeError as exc:
+                st.error(str(exc))
 
 
 def plot_layout(fig: go.Figure, height: int = 270) -> go.Figure:
@@ -288,6 +405,7 @@ elif page == "Live scanner":
     st.markdown("<div class='scanner-box'>", unsafe_allow_html=True)
     with st.form("live_scan_form", clear_on_submit=False):
         url_input = st.text_input("Website URL", placeholder="https://example.com", label_visibility="collapsed")
+        want_preview = st.checkbox("Also show a site screenshot (sends the address to the third-party service thum.io)", value=False)
         scan_clicked = st.form_submit_button("Analyse website  →", use_container_width=True)
     st.markdown("<div style='color:#77839b;font-size:10px;margin-top:7px'>Only scan websites you are authorised to assess. Do not submit credentials or sensitive URLs.</div></div>", unsafe_allow_html=True)
 
@@ -295,7 +413,8 @@ elif page == "Live scanner":
         try:
             clean_url = normalise_url(url_input)
             with st.spinner("Retrieving page and evaluating model signals…"):
-                scan_data = scan_website(clean_url)
+                scan_data = scan_website(clean_url, want_preview)
+            st.session_state.pop("last_reports", None)
             st.session_state["last_scan"] = scan_data
             st.session_state["last_submitted_url"] = clean_url
             st.session_state.pop("last_scan_error", None)
@@ -310,7 +429,7 @@ elif page == "Live scanner":
         data = st.session_state["last_scan"]
         try:
             pred = str(data["prediction"]).strip().upper()
-            if pred not in {"PHISHING", "LEGITIMATE", "NEEDS_REVIEW"}:
+            if pred not in {"PHISHING", "LEGITIMATE", "NEEDS_REVIEW", "LIKELY_LEGITIMATE"}:
                 raise ValueError("Unexpected prediction label from API.")
             hybrid = probability(data["hybrid_probability"], "Hybrid probability")
             threshold = probability(data["threshold"], "Decision threshold")
@@ -327,7 +446,13 @@ elif page == "Live scanner":
         review = pred == "NEEDS_REVIEW"
         tint = "#ff6e83" if phishing else ("#f5c451" if review else "#57d6a1")
         badge = "tag-bad" if phishing else ("tag-warn" if review else "tag-good")
-        status_text = "PHISHING DETECTED" if phishing else ("NEEDS REVIEW - UNCERTAIN" if review else "CLASSIFIED AS LEGITIMATE")
+        status_text = {
+            "PHISHING": "PHISHING DETECTED",
+            "NEEDS_REVIEW": "NEEDS REVIEW - UNCERTAIN",
+            "LIKELY_LEGITIMATE": "LIKELY LEGITIMATE",
+            "LEGITIMATE": "CLASSIFIED AS LEGITIMATE",
+        }[pred]
+        raw_label = "RAW MODEL SCORE" if data.get("model_prediction") not in (None, pred) else "HYBRID PHISHING PROBABILITY"
         submitted = html.escape(str(data.get("submitted_url", st.session_state.get("last_submitted_url", "—"))))
         final_url = html.escape(str(data.get("final_url", data.get("url", "—"))))
         content_type = html.escape(str(data.get("content_type", "—")))
@@ -336,7 +461,7 @@ elif page == "Live scanner":
         st.markdown("<div class='section-head'><div class='section-title'>Assessment result</div><div class='section-meta'>LIVE MODEL RESPONSE</div></div>", unsafe_allow_html=True)
         result_cols = st.columns([1.25, 1], gap="large")
         with result_cols[0]:
-            st.markdown(f"<div class='result-hero'><div class='risk-kicker'>HYBRID PHISHING PROBABILITY</div><div class='risk-number' style='color:{tint}'>{hybrid*100:.2f}%</div><div style='color:#8b97ad;font-size:12px'>Risk score {risk:.2f}% · Decision threshold {threshold*100:.0f}%</div><span class='status-tag {badge}'>{status_text}</span></div>", unsafe_allow_html=True)
+            st.markdown(f"<div class='result-hero'><div class='risk-kicker'>{raw_label}</div><div class='risk-number' style='color:{tint}'>{hybrid*100:.2f}%</div><div style='color:#8b97ad;font-size:12px'>Risk score {risk:.2f}% · Decision threshold {threshold*100:.0f}%</div><span class='status-tag {badge}'>{status_text}</span></div>", unsafe_allow_html=True)
             st.markdown("<div style='height:10px'></div>", unsafe_allow_html=True)
             st.progress(risk / 100)
             if data.get("decision_note"):
@@ -356,6 +481,7 @@ elif page == "Live scanner":
 
         st.markdown("<div class='section-head'><div class='section-title'>Retrieved page metadata</div><div class='section-meta'>SCAN DETAILS</div></div>", unsafe_allow_html=True)
         st.markdown(f"<div class='surface'><div class='info-row'><span class='info-key'>Submitted URL</span><span class='info-val'>{submitted}</span></div><div class='info-row'><span class='info-key'>Final URL</span><span class='info-val'>{final_url}</span></div><div class='info-row'><span class='info-key'>Content type</span><span class='info-val'>{content_type}</span></div><div class='info-row'><span class='info-key'>HTML retrieved</span><span class='info-val'>{html_size} bytes</span></div></div>", unsafe_allow_html=True)
+        render_scan_details(data)
         with st.expander("Model response details"):
             st.json(data)
 
