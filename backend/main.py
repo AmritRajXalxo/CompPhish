@@ -1,11 +1,23 @@
 
-from fastapi import FastAPI, HTTPException
+from concurrent.futures import ThreadPoolExecutor
+from urllib.parse import urlparse
+
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 
 from backend.prediction_service import predict_website
 from backend.webpage_fetcher import fetch_webpage
-from backend.trust_signals import apply_trust_adjustment, assess_trust
+from backend import reports_store
+from backend.scan_intel import (
+    network_footprint,
+    page_behaviour,
+    server_location,
+    threat_feeds,
+    tls_details,
+)
+from backend.trust_signals import assess_trust
+from backend.verdict import compose_verdict
 
 
 # --------------------------------------------------
@@ -60,6 +72,18 @@ class ScanRequest(BaseModel):
         min_length=1,
         description="Website URL to scan",
     )
+
+    include_preview: bool = Field(
+        False,
+        description="Add a third-party screenshot link (thum.io) to the response",
+    )
+
+
+class ReportRequest(BaseModel):
+
+    url: str = Field(..., min_length=1, max_length=2000)
+    category: str = Field(..., description="scam, safe or other")
+    comment: str = Field("", max_length=300)
 
 
 # --------------------------------------------------
@@ -174,12 +198,25 @@ def scan_website(request: ScanRequest):
             html=html,
         )
 
-        # C. Corroborate the model verdict with domain age / TLS evidence
+        # C. Gather independent evidence in parallel
 
-        result = apply_trust_adjustment(
-            result,
-            assess_trust(request.url, webpage["final_url"]),
-        )
+        final_url = webpage["final_url"]
+        host = (urlparse(final_url).hostname or "").lower()
+
+        with ThreadPoolExecutor(max_workers=6) as pool:
+            f_trust = pool.submit(assess_trust, request.url, final_url)
+            f_tls = pool.submit(tls_details, host)
+            f_feeds = pool.submit(threat_feeds, final_url)
+            f_loc = pool.submit(server_location, host)
+            f_net = pool.submit(network_footprint, html, final_url)
+            behaviour = page_behaviour(html, final_url)
+            trust, tls = f_trust.result(), f_tls.result()
+            feeds, location, footprint = (
+                f_feeds.result(), f_loc.result(), f_net.result()
+            )
+
+        result["redirect_chain"] = webpage.get("redirect_chain", [])
+        result = compose_verdict(result, trust, feeds, behaviour, tls)
 
         # D. Return scan results
 
@@ -195,6 +232,25 @@ def scan_website(request: ScanRequest):
             "content_type": webpage["content_type"],
 
             "html_size": len(html),
+
+            "tls": tls,
+            "threat_feeds": feeds,
+            "page_behaviour": behaviour,
+            "network_footprint": footprint,
+            "server_location": location,
+            "statistics": {
+                "load_seconds": webpage.get("load_seconds"),
+                "status_code": webpage.get("status_code"),
+                "html_bytes": len(html),
+                "cookies_set": webpage.get("cookie_count"),
+                "security_headers": webpage.get("security_headers"),
+                "server_header": webpage.get("server_header"),
+            },
+            "community_reports": reports_store.summary(final_url),
+            "preview_url": (
+                f"https://image.thum.io/get/width/900/noanimate/{final_url}"
+                if request.include_preview else None
+            ),
 
             **result,
         }
@@ -212,3 +268,32 @@ def scan_website(request: ScanRequest):
             status_code=502,
             detail=f"Website scanning failed: {exc}",
         )
+
+
+
+# --------------------------------------------------
+# 8. Community reports
+# --------------------------------------------------
+
+@app.post("/report")
+def report_link(request: ReportRequest, http_request: Request):
+
+    client = http_request.client.host if http_request.client else "unknown"
+
+    try:
+        return {
+            "success": True,
+            "community_reports": reports_store.add_report(
+                request.url, request.category, request.comment, client
+            ),
+        }
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
+    except PermissionError as exc:
+        raise HTTPException(status_code=429, detail=str(exc))
+
+
+@app.get("/reports")
+def get_reports(url: str):
+
+    return reports_store.summary(url)

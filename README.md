@@ -152,3 +152,17 @@ The extension is a UI scaffold. It currently reports that feature-parity integra
 - Do not send passwords, form values, cookies, authentication tokens or personal page data to the backend.
 - Only send the minimum URL, structural counts and visible text needed for inference.
 - Keep the local API bound to `127.0.0.1` during development.
+
+## Scan evidence (Scam-link-check style results)
+
+`POST /scan` now returns, next to the model score: a final verdict with a plain-language
+explanation and next steps, redirect path, TLS certificate details, domain age (RDAP),
+threat-feed lookups, page-behaviour findings, hosting IP / ASN / country, an estimated
+network footprint, request statistics and community reports. `POST /report` and
+`GET /reports?url=` store and read community reports.
+
+Optional environment variables (each adds a threat-feed source when set):
+`URLHAUS_AUTH_KEY`, `GOOGLE_SAFE_BROWSING_KEY`. `COMPPHISH_DB` sets where community
+reports are stored (default `/tmp/compphish_reports.db`, which is wiped on redeploy on
+free hosts). The OpenPhish community feed needs no key. "No match" in a feed never means
+"safe". The site screenshot is opt-in and uses the third-party service thum.io.
