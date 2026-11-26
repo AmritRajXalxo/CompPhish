@@ -242,15 +242,17 @@ def render_scan_details(data: dict[str, Any]) -> None:
 
     tls_html = ui.connection_card(data.get("tls"))
     domain_html = ui.domain_card(data.get("trust_signals"))
+    threat_html = ui.threat_card(data.get("threat_feeds"))
+    behaviour_html = ui.behaviour_card(data.get("page_behaviour"))
 
-    # --- Preview next to connection security + domain age ----------------
+    # --- Preview beside connection, domain, threat intel and behaviour ----
     if data.get("preview_url"):
-        section("Site preview, connection and domain", "SCREENSHOT BY THUM.IO (THIRD PARTY) · TLS · RDAP")
+        section("Site preview and security evidence", "SCREENSHOT BY THUM.IO (THIRD PARTY) · TLS · RDAP · THREAT FEEDS · PAGE HTML")
         left, right = st.columns([1.15, 1], gap="medium")
         with left:
             st.markdown(ui.preview_card(data["preview_url"]), unsafe_allow_html=True)
         with right:
-            st.markdown(tls_html + domain_html, unsafe_allow_html=True)
+            st.markdown(tls_html + domain_html + threat_html + behaviour_html, unsafe_allow_html=True)
     else:
         section("Connection and domain", "TLS CERTIFICATE · RDAP REGISTRATION RECORD")
         left, right = st.columns(2, gap="medium")
@@ -258,20 +260,18 @@ def render_scan_details(data: dict[str, Any]) -> None:
             st.markdown(tls_html, unsafe_allow_html=True)
         with right:
             st.markdown(domain_html, unsafe_allow_html=True)
+        section("Threat intelligence and page behaviour", "'NO MATCH' IS NOT 'SAFE'")
+        t1, t2 = st.columns(2, gap="medium")
+        with t1:
+            st.markdown(threat_html, unsafe_allow_html=True)
+        with t2:
+            st.markdown(behaviour_html, unsafe_allow_html=True)
 
     # --- Navigation / redirects -----------------------------------------
     chain = data.get("redirect_chain") or []
     if chain:
         section("Navigation path", f"{max(len(chain) - 1, 0)} REDIRECT(S)")
         st.markdown(rows_html([(f"Step {i + 1} · HTTP {h.get('status')}", h.get("url")) for i, h in enumerate(chain)]), unsafe_allow_html=True)
-
-    # --- Threat intelligence + page behaviour ---------------------------
-    section("Threat intelligence and page behaviour", "'NO MATCH' IS NOT 'SAFE'")
-    t1, t2 = st.columns(2, gap="medium")
-    with t1:
-        st.markdown(ui.threat_card(data.get("threat_feeds")), unsafe_allow_html=True)
-    with t2:
-        st.markdown(ui.behaviour_card(data.get("page_behaviour")), unsafe_allow_html=True)
 
     # --- Statistics + server location ------------------------------------
     stats = data.get("statistics") or {}
