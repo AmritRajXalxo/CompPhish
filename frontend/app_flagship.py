@@ -18,6 +18,11 @@ except ImportError as exc:  # clear setup message if Plotly is not installed
 # ============================================================
 # 1. PAGE CONFIGURATION + API CONFIGURATION
 # ============================================================
+try:  # Streamlit puts the script folder on sys.path
+    import ui_components as ui
+except ImportError:  # pragma: no cover - e.g. run from another working directory
+    from frontend import ui_components as ui
+
 st.set_page_config(
     page_title="CompPhish | Security Intelligence",
     page_icon="🛡️",
@@ -221,6 +226,8 @@ def submit_report(url: str, category: str, comment: str) -> dict[str, Any]:
 
 def render_scan_details(data: dict[str, Any]) -> None:
     """Evidence panels shown below the model breakdown (all text is HTML-escaped)."""
+    st.markdown(f"<style>{ui.CSS}</style>", unsafe_allow_html=True)
+
     # --- What we checked + next steps -----------------------------------
     explanation = data.get("explanation") or []
     if explanation:
@@ -233,10 +240,24 @@ def render_scan_details(data: dict[str, Any]) -> None:
         items = "".join(f"<div class='info-row'><span class='info-val' style='text-align:left'>• {esc(x)}</span></div>" for x in steps)
         st.markdown(f"<div class='surface'>{items}</div>", unsafe_allow_html=True)
 
-    # --- Site preview ----------------------------------------------------
+    tls_html = ui.connection_card(data.get("tls"))
+    domain_html = ui.domain_card(data.get("trust_signals"))
+
+    # --- Preview next to connection security + domain age ----------------
     if data.get("preview_url"):
-        section("Site preview", "SCREENSHOT BY THUM.IO (THIRD PARTY)")
-        st.image(data["preview_url"], width=720)
+        section("Site preview, connection and domain", "SCREENSHOT BY THUM.IO (THIRD PARTY) · TLS · RDAP")
+        left, right = st.columns([1.15, 1], gap="medium")
+        with left:
+            st.markdown(ui.preview_card(data["preview_url"]), unsafe_allow_html=True)
+        with right:
+            st.markdown(tls_html + domain_html, unsafe_allow_html=True)
+    else:
+        section("Connection and domain", "TLS CERTIFICATE · RDAP REGISTRATION RECORD")
+        left, right = st.columns(2, gap="medium")
+        with left:
+            st.markdown(tls_html, unsafe_allow_html=True)
+        with right:
+            st.markdown(domain_html, unsafe_allow_html=True)
 
     # --- Navigation / redirects -----------------------------------------
     chain = data.get("redirect_chain") or []
@@ -244,50 +265,24 @@ def render_scan_details(data: dict[str, Any]) -> None:
         section("Navigation path", f"{max(len(chain) - 1, 0)} REDIRECT(S)")
         st.markdown(rows_html([(f"Step {i + 1} · HTTP {h.get('status')}", h.get("url")) for i, h in enumerate(chain)]), unsafe_allow_html=True)
 
-    # --- Connection security + domain ----------------------------------
-    tls = data.get("tls") or {}
-    trust = data.get("trust_signals") or {}
-    c1, c2 = st.columns(2, gap="medium")
-    with c1:
-        section("Connection security", "TLS CERTIFICATE")
-        if tls.get("status") == "ok" and tls.get("valid"):
-            st.markdown(rows_html([("Certificate", "Valid"), ("Issuer", tls.get("issuer")), ("Issued to", tls.get("subject")), ("Valid until", tls.get("not_after")), ("Days left", tls.get("days_left")), ("Protocol", tls.get("protocol"))]), unsafe_allow_html=True)
-        elif tls.get("status") == "ok":
-            st.markdown(rows_html([("Certificate", "FAILED verification"), ("Reason", tls.get("error"))]), unsafe_allow_html=True)
-        else:
-            st.markdown(rows_html([("Certificate", "Could not be checked")]), unsafe_allow_html=True)
-    with c2:
-        section("Domain age", "RDAP REGISTRATION RECORD")
-        age = trust.get("domain_age_days")
-        st.markdown(rows_html([("Registered domain", trust.get("registered_domain")), ("Age", f"{age} days (~{age / 365:.1f} years)" if isinstance(age, (int, float)) else "Unknown"), ("Established", "Yes" if trust.get("established") else "No / unknown"), ("Shared hosting", "Yes" if trust.get("shared_hosting") else "No")]), unsafe_allow_html=True)
-
     # --- Threat intelligence + page behaviour ---------------------------
+    section("Threat intelligence and page behaviour", "'NO MATCH' IS NOT 'SAFE'")
     t1, t2 = st.columns(2, gap="medium")
     with t1:
-        section("Threat intelligence", "'NO MATCH' IS NOT 'SAFE'")
-        feeds = (data.get("threat_feeds") or {}).get("sources") or []
-        label = {"match": "LISTED", "no_match": "No match", "unavailable": "Unavailable"}
-        st.markdown(rows_html([(f.get("name"), label.get(f.get("status"), f.get("status"))) for f in feeds] or [("Feeds", "Unavailable")]), unsafe_allow_html=True)
+        st.markdown(ui.threat_card(data.get("threat_feeds")), unsafe_allow_html=True)
     with t2:
-        section("Page behaviour", "FROM THE PAGE HTML")
-        beh = data.get("page_behaviour") or {}
-        found = beh.get("findings") or []
-        st.markdown(rows_html([(f.get("severity", "").upper(), f.get("text")) for f in found] or [("Result", "Nothing significant found" if beh.get("status") == "ok" else "Could not be checked")]), unsafe_allow_html=True)
+        st.markdown(ui.behaviour_card(data.get("page_behaviour")), unsafe_allow_html=True)
 
-    # --- Statistics + server location + network footprint ---------------
+    # --- Statistics + server location ------------------------------------
     stats = data.get("statistics") or {}
     net = data.get("network_footprint") or {}
-    loc = data.get("server_location") or {}
-    s1, s2 = st.columns(2, gap="medium")
+    section("Statistics and server location", "FETCHED BY THE SCANNER · TEAM CYMRU DNS")
+    s1, s2 = st.columns([1.6, 1], gap="medium")
     with s1:
-        section("Statistics", "FETCHED BY THE SCANNER")
-        st.markdown(rows_html([("Page load", f"{stats.get('load_seconds')} s" if stats.get("load_seconds") is not None else None), ("HTTP status", stats.get("status_code")), ("HTML size", f"{stats.get('html_bytes')} bytes"), ("Resources referenced", net.get("resources")), ("HTTPS share of resources", f"{net.get('https_share')}%" if net.get("https_share") is not None else None), ("Cookies set", stats.get("cookies_set"))]), unsafe_allow_html=True)
+        st.markdown(ui.stats_grid(stats, net), unsafe_allow_html=True)
     with s2:
-        section("Server location", "TEAM CYMRU DNS")
-        if loc.get("status") == "ok":
-            st.markdown(rows_html([("IP address", loc.get("ip")), ("Country", loc.get("country")), ("ASN", f"{loc.get('asn')} ({loc.get('asn_name')})" if loc.get("asn_name") else loc.get("asn"))]), unsafe_allow_html=True)
-        else:
-            st.markdown(rows_html([("Location", "Could not be determined")]), unsafe_allow_html=True)
+        st.markdown(ui.location_card(data.get("server_location")), unsafe_allow_html=True)
+
     section("Network footprint", "ESTIMATED FROM PAGE HTML · NOT A BROWSER TRACE")
     ext = ", ".join(net.get("external_domains") or []) or None
     st.markdown(rows_html([("Domains referenced", net.get("domains")), ("IP addresses", net.get("ips")), ("Outbound links", net.get("links")), ("External domains", ext)]), unsafe_allow_html=True)
