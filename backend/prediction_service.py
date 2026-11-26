@@ -11,6 +11,7 @@ Pipeline:
 """
 
 from pathlib import Path
+from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
 import joblib
 import numpy as np
@@ -79,6 +80,53 @@ MODEL = load_hybrid_model()
 
 
 # --------------------------------------------------
+# 2b. URL normalisation and decision bands
+# --------------------------------------------------
+
+# Tracking / affiliate parameters carry no information about whether a site
+# is phishing, but their punctuation, digits and length shift the URL-branch
+# score a lot. They are removed before the URL features are computed.
+TRACKING_PARAMS = {
+    "tag", "ref", "ref_src", "referrer", "source", "src", "campaign", "cid",
+    "click", "clickid", "click_id", "affid", "aff_id", "aff", "sub", "sub1",
+    "sub2", "sub3", "gclid", "fbclid", "msclkid", "dclid", "yclid", "mc_cid",
+    "mc_eid", "igshid", "sessionid", "session_id", "sid", "trk", "trkid",
+}
+TRACKING_PREFIXES = ("utm_", "pk_", "mtm_", "hsa_", "vero_")
+
+# Decision bands. Below LOW_THRESHOLD -> legitimate, at or above
+# HIGH_THRESHOLD -> phishing, in between -> needs review (no hard verdict).
+LOW_THRESHOLD = 0.40
+HIGH_THRESHOLD = 0.85
+
+
+def clean_url_for_scoring(url: str) -> str:
+    """Drop tracking parameters and the fragment; keep everything else."""
+    parts = urlsplit(url.strip())
+    kept = [
+        (k, v)
+        for k, v in parse_qsl(parts.query, keep_blank_values=True)
+        if k.lower() not in TRACKING_PARAMS
+        and not k.lower().startswith(TRACKING_PREFIXES)
+    ]
+    return urlunsplit(
+        (parts.scheme, parts.netloc, parts.path, urlencode(kept), "")
+    )
+
+
+def host_root_url(url: str) -> str:
+    """scheme://host/ only - what the domain alone looks like."""
+    parts = urlsplit(url.strip())
+    return urlunsplit((parts.scheme, parts.netloc, "/", "", ""))
+
+
+def _url_branch_probability(url: str) -> float:
+    features = extract_url_features(url, MODEL["url_features"])
+    frame = pd.DataFrame([features], columns=MODEL["url_features"])
+    return float(MODEL["url_model"].predict_proba(frame)[0, 1])
+
+
+# --------------------------------------------------
 # 3. Prediction function
 # --------------------------------------------------
 
@@ -108,18 +156,15 @@ def predict_website(url: str, html: str) -> dict:
         raise ValueError("Website HTML is required.")
 
     # ----------------------------------------------
-    # A. URL feature extraction
+    # A. URL branch
     # ----------------------------------------------
+    # The URL model leans heavily on path/query punctuation, so one raw
+    # URL can swing the score on the same site. Score the cleaned full URL
+    # (tracking parameters removed) and the bare host, then average.
 
-    url_features = extract_url_features(
-        url,
-        MODEL["url_features"]
-    )
-
-    url_input = pd.DataFrame(
-        [url_features],
-        columns=MODEL["url_features"]
-    )
+    cleaned_url = clean_url_for_scoring(url)
+    url_full_probability = _url_branch_probability(cleaned_url)
+    url_host_probability = _url_branch_probability(host_root_url(url))
 
     # ----------------------------------------------
     # B. HTML feature extraction
@@ -150,11 +195,9 @@ def predict_website(url: str, html: str) -> dict:
     # D. Individual branch predictions
     # ----------------------------------------------
 
-    url_probability = float(
-        MODEL["url_model"].predict_proba(
-            url_input
-        )[0, 1]
-    )
+    url_probability = (
+        url_full_probability + url_host_probability
+    ) / 2.0
 
     html_probability = float(
         MODEL["html_model"].predict_proba(
@@ -207,13 +250,15 @@ def predict_website(url: str, html: str) -> dict:
     # F. Final classification
     # ----------------------------------------------
 
-    threshold = float(MODEL["threshold"])
+    if hybrid_probability >= HIGH_THRESHOLD:
+        prediction = "PHISHING"
+    elif hybrid_probability < LOW_THRESHOLD:
+        prediction = "LEGITIMATE"
+    else:
+        prediction = "NEEDS_REVIEW"
 
-    prediction = (
-        "PHISHING"
-        if hybrid_probability >= threshold
-        else "LEGITIMATE"
-    )
+    # Kept for reference: the bundle's original single cut-off.
+    legacy_threshold = float(MODEL["threshold"])
 
     # ----------------------------------------------
     # G. Return results
@@ -236,7 +281,19 @@ def predict_website(url: str, html: str) -> dict:
             hybrid_probability * 100, 2
         ),
 
-        "threshold": threshold,
+        "threshold": HIGH_THRESHOLD,
+
+        "bands": {
+            "legitimate_below": LOW_THRESHOLD,
+            "phishing_at_or_above": HIGH_THRESHOLD,
+            "legacy_single_threshold": legacy_threshold,
+        },
+
+        "url_detail": {
+            "scored_url": cleaned_url,
+            "full_url_probability": round(url_full_probability, 6),
+            "host_only_probability": round(url_host_probability, 6),
+        },
 
         "prediction": prediction,
     }

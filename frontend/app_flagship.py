@@ -113,6 +113,7 @@ footer {
     .status-tag { display:inline-block;padding:7px 11px;border-radius:7px;font:10px 'DM Mono',monospace;letter-spacing:1px;margin-top:10px; }
     .tag-bad { color:#ff91a0;background:rgba(255,110,131,.1);border:1px solid rgba(255,110,131,.25); }
     .tag-good { color:#75e3b5;background:rgba(87,214,161,.1);border:1px solid rgba(87,214,161,.25); }
+    .tag-warn { color:#f5c451;background:rgba(245,196,81,.1);border:1px solid rgba(245,196,81,.25); }
     .branch-tile { background:rgba(255,255,255,.025);border:1px solid var(--line);border-radius:13px;padding:15px; }
     .branch-title { color:#8995ad;font:10px 'DM Mono',monospace;letter-spacing:1px; }
     .branch-num { color:#edf2fb;font-size:24px;font-weight:800;margin-top:8px; }
@@ -309,7 +310,7 @@ elif page == "Live scanner":
         data = st.session_state["last_scan"]
         try:
             pred = str(data["prediction"]).strip().upper()
-            if pred not in {"PHISHING", "LEGITIMATE"}:
+            if pred not in {"PHISHING", "LEGITIMATE", "NEEDS_REVIEW"}:
                 raise ValueError("Unexpected prediction label from API.")
             hybrid = probability(data["hybrid_probability"], "Hybrid probability")
             threshold = probability(data["threshold"], "Decision threshold")
@@ -323,8 +324,10 @@ elif page == "Live scanner":
             st.stop()
 
         phishing = pred == "PHISHING"
-        tint = "#ff6e83" if phishing else "#57d6a1"
-        badge = "tag-bad" if phishing else "tag-good"
+        review = pred == "NEEDS_REVIEW"
+        tint = "#ff6e83" if phishing else ("#f5c451" if review else "#57d6a1")
+        badge = "tag-bad" if phishing else ("tag-warn" if review else "tag-good")
+        status_text = "PHISHING DETECTED" if phishing else ("NEEDS REVIEW - UNCERTAIN" if review else "CLASSIFIED AS LEGITIMATE")
         submitted = html.escape(str(data.get("submitted_url", st.session_state.get("last_submitted_url", "—"))))
         final_url = html.escape(str(data.get("final_url", data.get("url", "—"))))
         content_type = html.escape(str(data.get("content_type", "—")))
@@ -333,7 +336,7 @@ elif page == "Live scanner":
         st.markdown("<div class='section-head'><div class='section-title'>Assessment result</div><div class='section-meta'>LIVE MODEL RESPONSE</div></div>", unsafe_allow_html=True)
         result_cols = st.columns([1.25, 1], gap="large")
         with result_cols[0]:
-            st.markdown(f"<div class='result-hero'><div class='risk-kicker'>HYBRID PHISHING PROBABILITY</div><div class='risk-number' style='color:{tint}'>{hybrid*100:.2f}%</div><div style='color:#8b97ad;font-size:12px'>Risk score {risk:.2f}% · Decision threshold {threshold*100:.0f}%</div><span class='status-tag {badge}'>{'PHISHING DETECTED' if phishing else 'CLASSIFIED AS LEGITIMATE'}</span></div>", unsafe_allow_html=True)
+            st.markdown(f"<div class='result-hero'><div class='risk-kicker'>HYBRID PHISHING PROBABILITY</div><div class='risk-number' style='color:{tint}'>{hybrid*100:.2f}%</div><div style='color:#8b97ad;font-size:12px'>Risk score {risk:.2f}% · Decision threshold {threshold*100:.0f}%</div><span class='status-tag {badge}'>{status_text}</span></div>", unsafe_allow_html=True)
             st.markdown("<div style='height:10px'></div>", unsafe_allow_html=True)
             st.progress(risk / 100)
         with result_cols[1]:
