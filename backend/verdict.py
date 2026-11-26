@@ -9,9 +9,10 @@ SEVERE = {"high"}
 CAUTION = {"medium", "high"}
 
 
-def compose_verdict(result: dict, trust: dict, feeds: dict, behaviour: dict, tls: dict) -> dict:
+def compose_verdict(result: dict, trust: dict, feeds: dict, behaviour: dict, tls: dict, brand: dict | None = None) -> dict:
     out = apply_trust_adjustment(result, trust)  # sets model_prediction, trust_signals, note
     model_pred = out["model_prediction"]
+    brand_hits = (brand or {}).get("findings") or []
     max_sev = behaviour.get("max_severity")
     has_pw = bool(behaviour.get("has_password_form"))
     reasons: list[str] = []
@@ -32,6 +33,7 @@ def compose_verdict(result: dict, trust: dict, feeds: dict, behaviour: dict, tls
         and trust.get("established")
         and not has_pw
         and max_sev not in CAUTION
+        and not brand_hits
     ):
         out["prediction"] = "LIKELY_LEGITIMATE"
         years = trust["domain_age_days"] / 365
@@ -45,7 +47,17 @@ def compose_verdict(result: dict, trust: dict, feeds: dict, behaviour: dict, tls
     elif model_pred == "LEGITIMATE" and max_sev in SEVERE:
         out["prediction"] = "NEEDS_REVIEW"
         note = "The model found nothing wrong, but the page behaves suspiciously (see page behaviour)."
+    # 5. The address imitates a brand, the model found nothing, and the domain is not established.
+    if (
+        brand_hits
+        and out["prediction"] in ("LEGITIMATE", "LIKELY_LEGITIMATE")
+        and not trust.get("established")
+        and feeds.get("overall") != "match"
+    ):
+        out["prediction"] = "NEEDS_REVIEW"
+        note = "The model found nothing wrong, but the address imitates a well-known brand: " + brand_hits[0]["text"]
     out["decision_note"] = note
+    out["brand_check"] = brand
 
     # Plain-language explanation (what we checked).
     age = trust.get("domain_age_days")
@@ -73,6 +85,8 @@ def compose_verdict(result: dict, trust: dict, feeds: dict, behaviour: dict, tls
             reasons.append("Page behaviour: suspicious behaviour found.")
         else:
             reasons.append("Page behaviour: nothing significant found.")
+    if brand_hits:
+        reasons.append("Brand check: " + brand_hits[0]["text"])
     chain = out.get("redirect_chain") or []
     if len(chain) > 1:
         reasons.append(f"Navigation: {len(chain) - 1} redirect(s) before the final page.")

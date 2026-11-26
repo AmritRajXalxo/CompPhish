@@ -243,7 +243,11 @@ def render_scan_details(data: dict[str, Any]) -> None:
     tls_html = ui.connection_card(data.get("tls"))
     domain_html = ui.domain_card(data.get("trust_signals"))
     threat_html = ui.threat_card(data.get("threat_feeds"))
-    behaviour_html = ui.behaviour_card(data.get("page_behaviour"))
+    behaviour_html = ui.behaviour_card(data.get("page_behaviour")) + ui.brand_card(data.get("brand_check"))
+
+    # --- Why this score -------------------------------------------------
+    section("Why this score", "WHAT THE MODEL BASED ITS SCORE ON")
+    st.markdown(ui.explain_card(data.get("explanation")), unsafe_allow_html=True)
 
     # --- Preview beside connection, domain, threat intel and behaviour ----
     if data.get("preview_url"):
