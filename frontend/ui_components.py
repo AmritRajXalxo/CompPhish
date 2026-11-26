@@ -422,6 +422,84 @@ def preview_card(url: str | None) -> str:
 
 
 # --------------------------------------------------------------------------
+# Why this score (model explanation) and brand check
+# --------------------------------------------------------------------------
+
+
+def _signed(v: float, unit: str = "") -> str:
+    return f"{v:+.2f}{unit}"
+
+
+def _bar(value: float, scale: float) -> str:
+    """Horizontal bar: red pushes toward phishing, green toward legitimate."""
+    width = 0 if scale <= 0 else min(100.0, abs(value) / scale * 100.0)
+    tone = "bad" if value > 0 else "good"
+    return f"<div class='ci-bar'><div class='ci-bar-fill ci-bar-{tone}' style='width:{width:.0f}%'></div></div>"
+
+
+def _push_rows(rows: list[tuple[str, str, float]], scale: float, unit: str) -> str:
+    out = []
+    for name, sub, c in rows:
+        arrow = "toward phishing" if c > 0 else "toward legitimate"
+        out.append(
+            f"<div class='ci-push' title='{esc(arrow)}'><div class='ci-pushname'>{esc(name)}"
+            f"{f'<span class=ci-pushsub> {esc(sub)}</span>' if sub else ''}</div>{_bar(c, scale)}"
+            f"<div class='ci-pushval {'ci-red' if c > 0 else 'ci-green'}'>{esc(_signed(c, unit))}</div></div>"
+        )
+    return "".join(out)
+
+
+def explain_card(expl: dict | None) -> str:
+    if not expl or not expl.get("fusion"):
+        return card("Why this score", "info", note("An explanation is not available for this scan."), "neutral", badge("UNAVAILABLE", "neutral", "info"))
+    fu = expl["fusion"]
+    branches = fu["branches"]
+    labels = {"url": "URL branch", "html": "HTML branch", "text": "Page-text branch"}
+    rows = [(labels[k], f"{branches[k]['probability'] * 100:.0f}% phishing", branches[k]["push"]) for k in ("url", "html", "text")]
+    scale = max([abs(r[2]) for r in rows] + [abs(fu["intercept"])]) or 1.0
+    fusion_html = (
+        "<div class='ci-sec'>How the three branches combine</div>"
+        + _push_rows([("Starting point", "before looking at the site", fu["intercept"])] + rows, scale, "")
+        + f"<div class='ci-total'>Total {esc(_signed(fu['logit']))} (log-odds) &rarr; <b>{fu['probability'] * 100:.1f}%</b> phishing score</div>"
+    )
+    subs = []
+    for key, title in (("url", "URL features"), ("html", "HTML features")):
+        b = expl.get(key) or {}
+        feats = b.get("top_features") or []
+        if feats:
+            sc = max(abs(f["contribution"]) for f in feats) or 1.0
+            rr = [(f["feature"], f"= {f['value']}" if f["value"] is not None else "", f["contribution"] * 100) for f in feats]
+            subs.append(f"<div><div class='ci-sec'>{esc(title)} <span class='ci-pushsub'>(points on that branch)</span></div>{_push_rows(rr, sc * 100, '')}</div>")
+    tx = (expl.get("text") or {}).get("top_terms") or []
+    if tx:
+        sc = max(abs(f["contribution"]) for f in tx) or 1.0
+        subs.append(f"<div><div class='ci-sec'>Page-text words <span class='ci-pushsub'>(log-odds)</span></div>{_push_rows([(f['term'], '', f['contribution']) for f in tx], sc, '')}</div>")
+    detail = f"<div class='ci-explain-grid'>{''.join(subs)}</div>" if subs else ""
+    foot = note(
+        "Red pushes toward phishing, green toward legitimate. Feature contributions are exact tree-path contributions "
+        "(not SHAP). This explains what the model did, not whether the site is really phishing."
+    )
+    return card("Why this score", "info", fusion_html + detail + foot, "neutral", badge("MODEL EXPLANATION", "neutral", "info"))
+
+
+def brand_card(brand: dict | None) -> str:
+    brand = brand or {}
+    if brand.get("status") != "ok":
+        return card("Brand lookalike", "shield", note("The address could not be checked against known brands."), "neutral", badge("NOT CHECKED", "neutral", "info"))
+    findings = brand.get("findings") or []
+    if findings:
+        items = "".join(
+            f"<div class='ci-finding ci-f-warn'>{icon('alert', 18)}<div class='ci-ftext'>{esc(f.get('text'))}</div>{badge(str(f.get('kind', '')).upper(), 'warn')}</div>"
+            for f in findings
+        )
+        return card("Brand lookalike", "shield", items + note("This is a heuristic: some sites legitimately share a brand word. Check the address carefully."), "warn", badge("POSSIBLE IMITATION", "warn", "alert"))
+    off = brand.get("official_domain_of")
+    msg = f"This is an official {esc(off)} domain." if off else "No imitation of the brands in our (small) list was found. This does not cover every brand."
+    banner = f"<div class='ci-banner ci-b-good'>{icon('check', 20)}<div><b>No lookalike found</b><br><span>{msg}</span></div></div>"
+    return card("Brand lookalike", "shield", banner, "good", badge("NO LOOKALIKE", "good", "check"))
+
+
+# --------------------------------------------------------------------------
 # Stylesheet
 # --------------------------------------------------------------------------
 
@@ -479,6 +557,14 @@ CSS = """
 .ci-unavail b{color:#cbd4e5;font-size:13.5px}
 .ci-shot{border-radius:12px;overflow:hidden;border:1px solid rgba(155,170,198,.16);background:#05070b}
 .ci-shot img{display:block;width:100%;height:auto}
+.ci-sec{color:#8995ad;font:10px 'DM Mono',monospace;letter-spacing:.9px;text-transform:uppercase;margin:4px 0 8px}
+.ci-push{display:grid;grid-template-columns:minmax(0,1.3fr) minmax(0,1fr) 64px;gap:10px;align-items:center;padding:6px 0}
+.ci-pushname{color:#e8edf8;font-size:12.5px;font-weight:600;overflow-wrap:anywhere}.ci-pushsub{color:#6b7790;font-size:11px;font-weight:400}
+.ci-bar{height:6px;border-radius:6px;background:#242c3b;overflow:hidden}.ci-bar-fill{height:100%;border-radius:6px}
+.ci-bar-bad{background:linear-gradient(90deg,#ff6e83,#ff9aa8)}.ci-bar-good{background:linear-gradient(90deg,#57d6a1,#8be8c3)}
+.ci-pushval{text-align:right;font:600 12px 'DM Mono',monospace}.ci-green{color:#57d6a1}
+.ci-total{margin:10px 0 4px;padding:10px 12px;border-radius:10px;background:rgba(255,255,255,.03);border:1px solid rgba(155,170,198,.14);color:#cbd4e5;font-size:12.5px}
+.ci-explain-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:18px;margin-top:16px}
 @media (prefers-reduced-motion:reduce){.ci-card,.ci-tile{transition:none}.ci-card:hover,.ci-tile:hover{transform:none}}
 @media (max-width:640px){.ci-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.ci-big{font-size:26px}.ci-card{padding:15px 14px}.ci-facts{grid-template-columns:1fr 1fr}}
 """

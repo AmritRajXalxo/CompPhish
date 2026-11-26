@@ -17,6 +17,11 @@ import joblib
 import numpy as np
 import pandas as pd
 
+from backend.explain import (
+    explain_fusion,
+    explain_text_branch,
+    explain_tree_branch,
+)
 from backend.feature_extraction import (
     extract_url_features,
     extract_html_features,
@@ -120,10 +125,13 @@ def host_root_url(url: str) -> str:
     return urlunsplit((parts.scheme, parts.netloc, "/", "", ""))
 
 
-def _url_branch_probability(url: str) -> float:
+def _url_frame(url: str) -> pd.DataFrame:
     features = extract_url_features(url, MODEL["url_features"])
-    frame = pd.DataFrame([features], columns=MODEL["url_features"])
-    return float(MODEL["url_model"].predict_proba(frame)[0, 1])
+    return pd.DataFrame([features], columns=MODEL["url_features"])
+
+
+def _url_branch_probability(url: str) -> float:
+    return float(MODEL["url_model"].predict_proba(_url_frame(url))[0, 1])
 
 
 # --------------------------------------------------
@@ -257,6 +265,23 @@ def predict_website(url: str, html: str) -> dict:
     else:
         prediction = "NEEDS_REVIEW"
 
+    # Explanation of what the model did (never allowed to break a prediction).
+    try:
+        explanation = {
+            "fusion": explain_fusion(
+                MODEL["fusion_model"],
+                {"url": url_probability, "html": html_probability, "text": text_probability},
+            ),
+            "url": explain_tree_branch(
+                MODEL["url_model"],
+                [_url_frame(cleaned_url), _url_frame(host_root_url(url))],
+            ),
+            "html": explain_tree_branch(MODEL["html_model"], [html_input]),
+            "text": explain_text_branch(MODEL["text_model"], page_text),
+        }
+    except Exception:
+        explanation = None
+
     # Kept for reference: the bundle's original single cut-off.
     legacy_threshold = float(MODEL["threshold"])
 
@@ -294,6 +319,8 @@ def predict_website(url: str, html: str) -> dict:
             "full_url_probability": round(url_full_probability, 6),
             "host_only_probability": round(url_host_probability, 6),
         },
+
+        "explanation": explanation,
 
         "prediction": prediction,
     }

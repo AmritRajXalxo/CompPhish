@@ -9,6 +9,7 @@ from pydantic import BaseModel, Field
 from backend.prediction_service import predict_website
 from backend.webpage_fetcher import fetch_webpage
 from backend import reports_store
+from backend.brand_check import brand_check
 from backend.scan_intel import (
     network_footprint,
     page_behaviour,
@@ -216,7 +217,9 @@ def scan_website(request: ScanRequest):
             )
 
         result["redirect_chain"] = webpage.get("redirect_chain", [])
-        result = compose_verdict(result, trust, feeds, behaviour, tls)
+        result = compose_verdict(
+            result, trust, feeds, behaviour, tls, brand_check(final_url)
+        )
 
         # D. Return scan results
 

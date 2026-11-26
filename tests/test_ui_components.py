@@ -89,3 +89,23 @@ def test_markup_has_no_blank_lines_or_indentation():
 def test_shared_hosting_unknown_when_missing():
     assert "UNKNOWN" in ui.domain_card({})
     assert ">NO<" not in ui.domain_card({}).replace("</svg></span>", "")
+
+
+def test_explain_and_brand_cards():
+    expl = {
+        "fusion": {"intercept": -5.99, "logit": 3.98, "probability": 0.98,
+                   "branches": {"url": {"probability": 0.37, "weight": 4.6, "push": 1.69},
+                                "html": {"probability": 0.8, "weight": 4.5, "push": 3.59},
+                                "text": {"probability": 0.86, "weight": 5.5, "push": 4.7}}},
+        "url": {"top_features": [{"feature": "<b>host</b>", "value": 3, "contribution": 0.15}]},
+        "html": {"top_features": [{"feature": "tag_count", "value": 7, "contribution": -0.08}]},
+        "text": {"top_terms": [{"term": "login", "contribution": 0.73}]},
+    }
+    out = ui.explain_card(expl)
+    assert "<b>host</b>" not in out and "&lt;b&gt;host" in out
+    assert "Why this score" in out and "not SHAP" in out and "\n" not in out
+    assert "not available" in ui.explain_card(None)
+    hit = ui.brand_card({"status": "ok", "findings": [{"kind": "contains", "text": "x <i>y</i>"}]})
+    assert "POSSIBLE IMITATION" in hit and "<i>y</i>" not in hit and "\n" not in hit
+    assert "NO LOOKALIKE" in ui.brand_card({"status": "ok", "findings": []})
+    assert "NOT CHECKED" in ui.brand_card(None)
