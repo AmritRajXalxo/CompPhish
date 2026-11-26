@@ -57,7 +57,24 @@ st.markdown(
     html, body, [class*="css"] { font-family: 'DM Sans', sans-serif; }
     .stApp { background: radial-gradient(ellipse at 50% -20%, #1a2040 0%, #0b0e16 42%, #090b10 78%); color: var(--text); }
     [data-testid="stHeader"] { background: rgba(9,11,16,.78); }
-    [data-testid="stToolbar"], #MainMenu, footer { visibility: hidden; height: 0; }
+    /* Hide unnecessary menu and footer */
+#MainMenu,
+footer {
+    visibility: hidden;
+    height: 0;
+}
+
+/* Keep Streamlit toolbar visible */
+[data-testid="stToolbar"] {
+    visibility: visible !important;
+}
+
+/* Keep sidebar reopening button visible */
+[data-testid="stSidebarCollapsedControl"] {
+    display: flex !important;
+    visibility: visible !important;
+    opacity: 1 !important;
+}
     [data-testid="stDecoration"] { display:none; }
     .block-container { max-width: 1450px; padding: 1.6rem 2.4rem 3rem; }
     [data-testid="stSidebar"] { background: linear-gradient(180deg,#10141d 0%,#0c1017 100%); border-right:1px solid var(--line); }
