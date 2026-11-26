@@ -20,6 +20,11 @@ from typing import Any
 # --------------------------------------------------------------------------
 
 
+def _d(value: Any) -> dict:
+    """The API should send a dict; anything else is treated as 'no data' instead of crashing the page."""
+    return value if isinstance(value, dict) else {}
+
+
 def esc(value: Any) -> str:
     return html.escape(str(value), quote=True)
 
@@ -150,7 +155,7 @@ EXPIRY_WARN_DAYS = 30
 
 def tls_state(tls: dict | None) -> tuple[str, str, str]:
     """(tone, label, icon) for a TLS block from the API."""
-    tls = tls or {}
+    tls = _d(tls)
     if tls.get("status") != "ok":
         return "neutral", "UNAVAILABLE", "info"
     if tls.get("valid") is False:
@@ -166,7 +171,7 @@ def tls_state(tls: dict | None) -> tuple[str, str, str]:
 
 
 def connection_card(tls: dict | None) -> str:
-    tls = tls or {}
+    tls = _d(tls)
     tone, label, ic = tls_state(tls)
     b = badge(label, tone, ic)
     if tls.get("status") != "ok":
@@ -219,7 +224,7 @@ def age_tone(days: Any) -> str:
 
 
 def domain_card(trust: dict | None) -> str:
-    trust = trust or {}
+    trust = _d(trust)
     days = trust.get("domain_age_days")
     tone = age_tone(days)
     age = fmt_age(days)
@@ -264,7 +269,7 @@ _FEED_BADGE = {
 
 
 def threat_card(feeds: dict | None) -> str:
-    feeds = feeds or {}
+    feeds = _d(feeds)
     sources = feeds.get("sources") or []
     overall = feeds.get("overall")
     if overall == "match":
@@ -309,7 +314,7 @@ def _behaviour_icon(text: str) -> str:
 
 
 def behaviour_card(beh: dict | None) -> str:
-    beh = beh or {}
+    beh = _d(beh)
     if beh.get("status") != "ok":
         return card(
             "Page behaviour", "code",
@@ -367,7 +372,7 @@ def metric_tile(label: str, value: str | None, icon_name: str, tone: str = "neut
 
 
 def stats_grid(stats: dict | None, net: dict | None) -> str:
-    stats, net = stats or {}, net or {}
+    stats, net = _d(stats), _d(net)
     code = stats.get("status_code")
     share = net.get("https_share")
     share_tone = "neutral" if share is None else ("good" if share == 100 else "warn")
@@ -389,7 +394,7 @@ def stats_grid(stats: dict | None, net: dict | None) -> str:
 
 
 def location_card(loc: dict | None) -> str:
-    loc = loc or {}
+    loc = _d(loc)
     if loc.get("status") == "ok" and (loc.get("country") or loc.get("ip")):
         cc = loc.get("country")
         head = badge(str(cc), "good", "pin") if cc else badge("IDENTIFIED", "good", "pin")
@@ -450,7 +455,7 @@ def _push_rows(rows: list[tuple[str, str, float]], scale: float, unit: str) -> s
 
 
 def explain_card(expl: dict | None) -> str:
-    if not expl or not expl.get("fusion"):
+    if not isinstance(expl, dict) or not isinstance(expl.get("fusion"), dict):
         return card("Why this score", "info", note("An explanation is not available for this scan."), "neutral", badge("UNAVAILABLE", "neutral", "info"))
     fu = expl["fusion"]
     branches = fu["branches"]
@@ -483,7 +488,7 @@ def explain_card(expl: dict | None) -> str:
 
 
 def brand_card(brand: dict | None) -> str:
-    brand = brand or {}
+    brand = brand if isinstance(brand, dict) else {}
     if brand.get("status") != "ok":
         return card("Brand lookalike", "shield", note("The address could not be checked against known brands."), "neutral", badge("NOT CHECKED", "neutral", "info"))
     findings = brand.get("findings") or []
