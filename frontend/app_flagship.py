@@ -229,12 +229,14 @@ def render_scan_details(data: dict[str, Any]) -> None:
     st.markdown(f"<style>{ui.CSS}</style>", unsafe_allow_html=True)
 
     # --- What we checked + next steps -----------------------------------
-    explanation = data.get("explanation") or []
+    explanation = data.get("explanation")
+    explanation = explanation if isinstance(explanation, list) else []
     if explanation:
         section("What we checked", "EVIDENCE BEHIND THE VERDICT")
         items = "".join(f"<div class='info-row'><span class='info-val' style='text-align:left'>{esc(x)}</span></div>" for x in explanation)
         st.markdown(f"<div class='surface'>{items}</div>", unsafe_allow_html=True)
-    steps = data.get("next_steps") or []
+    steps = data.get("next_steps")
+    steps = steps if isinstance(steps, list) else []
     if steps:
         section("Recommended next steps", "GUIDANCE")
         items = "".join(f"<div class='info-row'><span class='info-val' style='text-align:left'>• {esc(x)}</span></div>" for x in steps)
@@ -243,11 +245,7 @@ def render_scan_details(data: dict[str, Any]) -> None:
     tls_html = ui.connection_card(data.get("tls"))
     domain_html = ui.domain_card(data.get("trust_signals"))
     threat_html = ui.threat_card(data.get("threat_feeds"))
-    behaviour_html = ui.behaviour_card(data.get("page_behaviour")) + ui.brand_card(data.get("brand_check"))
-
-    # --- Why this score -------------------------------------------------
-    section("Why this score", "WHAT THE MODEL BASED ITS SCORE ON")
-    st.markdown(ui.explain_card(data.get("explanation")), unsafe_allow_html=True)
+    behaviour_html = ui.behaviour_card(data.get("page_behaviour"))
 
     # --- Preview beside connection, domain, threat intel and behaviour ----
     if data.get("preview_url"):
@@ -272,14 +270,15 @@ def render_scan_details(data: dict[str, Any]) -> None:
             st.markdown(behaviour_html, unsafe_allow_html=True)
 
     # --- Navigation / redirects -----------------------------------------
-    chain = data.get("redirect_chain") or []
+    chain = data.get("redirect_chain")
+    chain = [h for h in chain if isinstance(h, dict)] if isinstance(chain, list) else []
     if chain:
         section("Navigation path", f"{max(len(chain) - 1, 0)} REDIRECT(S)")
         st.markdown(rows_html([(f"Step {i + 1} · HTTP {h.get('status')}", h.get("url")) for i, h in enumerate(chain)]), unsafe_allow_html=True)
 
     # --- Statistics + server location ------------------------------------
-    stats = data.get("statistics") or {}
-    net = data.get("network_footprint") or {}
+    stats = ui._d(data.get("statistics"))
+    net = ui._d(data.get("network_footprint"))
     section("Statistics and server location", "FETCHED BY THE SCANNER · TEAM CYMRU DNS")
     s1, s2 = st.columns([1.6, 1], gap="medium")
     with s1:
@@ -287,16 +286,23 @@ def render_scan_details(data: dict[str, Any]) -> None:
     with s2:
         st.markdown(ui.location_card(data.get("server_location")), unsafe_allow_html=True)
 
+    section("Brand lookalike and score explanation", "HEURISTIC CHECK · WHAT THE MODEL BASED ITS SCORE ON")
+    b1, b2 = st.columns([1, 2], gap="medium")
+    with b1:
+        st.markdown(ui.brand_card(data.get("brand_check")), unsafe_allow_html=True)
+    with b2:
+        st.markdown(ui.explain_card(data.get("model_explanation")), unsafe_allow_html=True)
+
     section("Network footprint", "ESTIMATED FROM PAGE HTML · NOT A BROWSER TRACE")
-    ext = ", ".join(net.get("external_domains") or []) or None
+    ext = ", ".join(str(d) for d in (net.get("external_domains") or []) if isinstance(d, str)) or None
     st.markdown(rows_html([("Domains referenced", net.get("domains")), ("IP addresses", net.get("ips")), ("Outbound links", net.get("links")), ("External domains", ext)]), unsafe_allow_html=True)
 
     # --- Community reports ---------------------------------------------
     section("Community reports", "OPINIONS, NOT VERIFIED EVIDENCE")
-    cr = st.session_state.get("last_reports") or data.get("community_reports") or {}
+    cr = ui._d(st.session_state.get("last_reports") or data.get("community_reports"))
     st.markdown(rows_html([("Reports on this page", cr.get("total", 0)), ("Marked scam", cr.get("scam", 0)), ("Marked safe", cr.get("safe", 0)), ("Other", cr.get("other", 0))]), unsafe_allow_html=True)
     for r in cr.get("recent") or []:
-        if r.get("comment"):
+        if isinstance(r, dict) and r.get("comment"):
             st.caption(f"{r.get('category', '').upper()}: {r['comment']}")
     with st.form("report_form", clear_on_submit=True):
         cat = st.selectbox("Report this page as", ["scam", "safe", "other"])

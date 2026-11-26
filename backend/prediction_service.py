@@ -320,7 +320,7 @@ def predict_website(url: str, html: str) -> dict:
             "host_only_probability": round(url_host_probability, 6),
         },
 
-        "explanation": explanation,
+        "model_explanation": explanation,
 
         "prediction": prediction,
     }
