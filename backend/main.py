@@ -5,6 +5,7 @@ from pydantic import BaseModel, Field
 
 from backend.prediction_service import predict_website
 from backend.webpage_fetcher import fetch_webpage
+from backend.trust_signals import apply_trust_adjustment, assess_trust
 
 
 # --------------------------------------------------
@@ -173,7 +174,14 @@ def scan_website(request: ScanRequest):
             html=html,
         )
 
-        # C. Return scan results
+        # C. Corroborate the model verdict with domain age / TLS evidence
+
+        result = apply_trust_adjustment(
+            result,
+            assess_trust(request.url, webpage["final_url"]),
+        )
+
+        # D. Return scan results
 
         return {
             "success": True,
