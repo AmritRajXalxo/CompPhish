@@ -166,3 +166,16 @@ Optional environment variables (each adds a threat-feed source when set):
 reports are stored (default `/tmp/compphish_reports.db`, which is wiped on redeploy on
 free hosts). The OpenPhish community feed needs no key. "No match" in a feed never means
 "safe". The site screenshot is opt-in and uses the third-party service thum.io.
+
+## Measuring the model (live evaluation)
+
+`scripts/evaluate_live.py` fetches real phishing and legitimate pages, scores them with the
+app's model, and writes `eval_out/report.md` plus a per-URL `results.csv`. Run it from the
+repo root on a machine with internet access:
+
+    python scripts/evaluate_live.py --phish 300 --legit 300 --hard-negatives --with-trust
+
+Rates are shown with 95% confidence intervals, fetch failures are reported, and threat feeds
+are switched off in the final-verdict table so sampled phishing cannot match itself. Add
+`--research-app DIR --research-models DIR` to score the 44/33/TF-IDF research model on the
+same pages. Read the "Read this first" section of the report before quoting any number.
