@@ -195,3 +195,22 @@ The live evaluation measures generalisation, not memorisation:
   thresholds defined from the page itself, never from site names;
 - named well-known sites are a regression check only. Never tune thresholds, add allow-lists
   or train on them: a model that is "fixed" for named sites is overfitted, not better.
+
+## Retraining the model (domain-disjoint)
+
+`scripts/retrain_model.py` retrains the same architecture the app loads, but splits by
+registered domain so every test domain is unseen, uses shallower trees, trains on URLs with
+tracking parameters removed and as bare hosts, fits the fusion on out-of-fold probabilities,
+and chooses the decision bands from a target false-positive rate on a separate validation split.
+
+```bash
+python scripts/retrain_model.py --data train.parquet
+python scripts/retrain_model.py --data train.parquet --extra hard_negatives.csv
+```
+
+Input columns: `url`, `label` (1 = phishing), the six HTML feature columns plus `text_clean`
+(or an `html` column to derive them). Output: `models/compphish_hybrid_model_v2.joblib` and
+`retrain_out/report.md`. The live model is **not** replaced. Train with the scikit-learn version
+in `requirements.txt`, compare v2 against the current model with `scripts/evaluate_live.py`, and
+copy it over `compphish_hybrid_model.joblib` only if the live results are better. If the bundle
+contains `bands`, the app uses them; otherwise it keeps 0.40 / 0.85.

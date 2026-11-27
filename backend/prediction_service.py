@@ -105,6 +105,22 @@ LOW_THRESHOLD = 0.40
 HIGH_THRESHOLD = 0.85
 
 
+def _bands_from_bundle(bundle: dict) -> tuple[float, float]:
+    """Use bands saved by scripts/retrain_model.py when they are sane, else the defaults."""
+    try:
+        bands = bundle.get("bands") or {}
+        low = float(bands["legitimate_below"])
+        high = float(bands["phishing_at_or_above"])
+        if 0.0 < low < high < 1.0:
+            return low, high
+    except (KeyError, TypeError, ValueError):
+        pass
+    return LOW_THRESHOLD, HIGH_THRESHOLD
+
+
+LOW_THRESHOLD, HIGH_THRESHOLD = _bands_from_bundle(MODEL)
+
+
 def clean_url_for_scoring(url: str) -> str:
     """Drop tracking parameters and the fragment; keep everything else."""
     parts = urlsplit(url.strip())
