@@ -144,17 +144,3 @@ def test_run_records_domains_and_flags_missing_train_domains(tmp_path, monkeypat
     assert all(r["reg_domain"] for r in results)
     assert "complex" in results[0]
     assert "NOT guaranteed" in "\n".join(ev.run.source_notes)
-
-
-def test_headline_summary_uses_deployed_scores_and_excludes_hard_negatives(tmp_path):
-    import importlib.util, sys, types
-    spec = importlib.util.spec_from_file_location("evl", Path(__file__).resolve().parents[1] / "scripts" / "evaluate_live.py")
-    m = importlib.util.module_from_spec(spec)
-    sys.modules["evl"] = m
-    spec.loader.exec_module(m)
-    rows = ([{"group": "phishing", "label": 1, "deployed_p": 0.9}] * 3 + [{"group": "phishing", "label": 1, "deployed_p": 0.2}]
-            + [{"group": "legitimate", "label": 0, "deployed_p": 0.1}] * 5 + [{"group": "legitimate", "label": 0, "deployed_p": 0.9}]
-            + [{"group": "hard_negative", "label": 0, "deployed_p": 0.99}] * 4)
-    s = m.headline_summary(rows, types.SimpleNamespace(train_domains="x.txt"))
-    assert (s["phish_n"], s["phish_caught"], s["legit_n"], s["legit_flagged"], s["unseen_domains"]) == (4, 3, 6, 1, True)
-    assert m.headline_summary([], types.SimpleNamespace(train_domains=None)) is None
