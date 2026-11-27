@@ -235,6 +235,7 @@ def scan_website(request: ScanRequest):
             "content_type": webpage["content_type"],
 
             "html_size": len(html),
+            "html_truncated": bool(webpage.get("html_truncated")),
 
             "tls": tls,
             "threat_feeds": feeds,

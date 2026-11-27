@@ -469,6 +469,8 @@ elif page == "Live scanner":
         final_url = html.escape(str(data.get("final_url", data.get("url", "—"))))
         content_type = html.escape(str(data.get("content_type", "—")))
         html_size = html.escape(str(data.get("html_size", "—")))
+        if data.get("html_truncated") is True:
+            html_size += " (page is larger; only this first part was analysed)"
 
         st.markdown("<div class='section-head'><div class='section-title'>Assessment result</div><div class='section-meta'>LIVE MODEL RESPONSE</div></div>", unsafe_allow_html=True)
         result_cols = st.columns([1.25, 1], gap="large")
