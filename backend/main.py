@@ -111,35 +111,18 @@ def root():
 # 5. Health endpoint
 # --------------------------------------------------
 
-@app.get("/model-info")
-def model_info():
-    """Facts read from the loaded model file (features, fusion weights, importances)."""
-    try:
-        from backend import prediction_service as ps
-        from backend.model_info import build_model_info
-
-        return build_model_info(ps.MODEL, ps.LOW_THRESHOLD, ps.HIGH_THRESHOLD)
-    except Exception as exc:
-        raise HTTPException(status_code=503, detail=f"Model unavailable: {exc}")
-
-
 @app.get("/health")
 def health():
 
     try:
 
-        from backend import prediction_service as ps
-        MODEL = ps.MODEL
+        from backend.prediction_service import MODEL
 
         return {
             "status": "ok",
             "model_loaded": MODEL is not None,
             "model_name": MODEL.get("model_name"),
             "threshold": MODEL.get("threshold"),
-            "bands": {
-                "legitimate_below": ps.LOW_THRESHOLD,
-                "phishing_at_or_above": ps.HIGH_THRESHOLD,
-            },
         }
 
     except Exception as exc:
