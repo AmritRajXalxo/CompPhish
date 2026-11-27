@@ -229,3 +229,24 @@ def model_card_html(low: float, high: float, model_name: str, eval_summary: dict
             f"<div class='metric-foot' style='margin-top:6px'>Legitimate below {low:.2f} &middot; phishing at or above {high:.2f} &middot; between: needs review</div>"
             f"{measured}"
             f"<div style='margin-top:12px;color:#748099;font-size:11px'>Threat-feed &ldquo;no match&rdquo; never means a site is safe.</div></div>")
+
+
+def compact_result_html(data: Any, url: str = "") -> str | None:
+    """One-line verdict strip for the Overview. None when the data is not displayable."""
+    if not isinstance(data, dict):
+        return None
+    pred = str(data.get("prediction", "")).strip().upper()
+    if pred not in VERDICTS:
+        return None
+    try:
+        risk = float(data.get("risk_score"))
+    except (TypeError, ValueError):
+        return None
+    if not math.isfinite(risk) or not 0 <= risk <= 100:
+        return None
+    colour = VERDICT_COLOUR[pred]
+    shown = data.get("final_url") or url or ""
+    return (f"<div class='surface' style='display:flex;flex-wrap:wrap;gap:6px 18px;align-items:center;margin-top:12px'>"
+            f"<span style='color:{colour};font-weight:800;font-size:15px'>&#9679; {esc(VERDICT_LABEL[pred])}</span>"
+            f"<span style='color:#edf2fb;font-weight:700'>{risk:.1f}% risk</span>"
+            f"<span class='info-key' style='flex:1 1 220px;min-width:0;overflow-wrap:anywhere'>{esc(shown)}</span></div>")
