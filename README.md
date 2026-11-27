@@ -179,3 +179,19 @@ Rates are shown with 95% confidence intervals, fetch failures are reported, and 
 are switched off in the final-verdict table so sampled phishing cannot match itself. Add
 `--research-app DIR --research-models DIR` to score the 44/33/TF-IDF research model on the
 same pages. Read the "Read this first" section of the report before quoting any number.
+
+### Evaluating on unseen domains (design rules)
+
+The live evaluation measures generalisation, not memorisation:
+
+- one URL per registered domain per group, so a single site cannot dominate a result;
+- `--train-domains FILE` removes every domain used in training. Create the file once from
+  your training parquet, for example:
+
+      python -c "import pandas as pd; from urllib.parse import urlparse; from backend.trust_signals import registered_domain as r; df=pd.read_parquet('HTML_Train_Corrected.parquet', columns=['url']); open('train_domains.txt','w').write('\n'.join(sorted({r((urlparse(u).hostname or '').lower()) for u in df['url']})))"
+
+  then run with `--train-domains train_domains.txt` (adjust the column name if your file differs);
+- the report splits results into complex pages, simple pages and login pages, using fixed
+  thresholds defined from the page itself, never from site names;
+- named well-known sites are a regression check only. Never tune thresholds, add allow-lists
+  or train on them: a model that is "fixed" for named sites is overfitted, not better.

@@ -20,7 +20,16 @@ Optional:
                                       folder with the `compphish` package; models folder
                                       holds research_bundle.joblib)
     --phish-file F / --legit-file F   use your own URL lists (one URL per line)
+    --train-domains FILE              file of registered domains used in training (one per line);
+                                      those domains are excluded so every evaluated domain is unseen
     --from-results CSV                rebuild the report from a previous results.csv
+
+Design rules (so the numbers measure generalisation, not memorisation):
+  * at most ONE URL per registered domain per group, and none from --train-domains;
+  * "complex page" and "login page" strata are defined from the page itself with fixed,
+    pre-declared thresholds, never from site names;
+  * the named-site list (Google-style examples) is a regression/sanity set only. It is
+    excluded from every headline table and must never be used for tuning or training.
 
 Read the caveats at the top of the generated report before trusting any number.
 """
@@ -122,6 +131,61 @@ def table_md(s: dict) -> str:
     if s["roc_auc"] is not None:
         auc = f"\nROC-AUC {s['roc_auc']:.3f} · PR-AUC {s['pr_auc']:.3f} (n = {s['n_pos']} phishing, {s['n_neg']} legitimate)\n"
     return "\n".join(lines) + "\n" + auc
+
+
+# --------------------------------------------------------------------------
+# Domain hygiene and page strata
+# --------------------------------------------------------------------------
+
+# Pre-declared thresholds. Do NOT adjust them after looking at results.
+COMPLEX_HTML_BYTES = 200_000
+COMPLEX_SCRIPTS = 30
+COMPLEX_EXTERNAL_DOMAINS = 10
+MIN_STRATUM_N = 30        # below this a stratum is reported as "too few to conclude"
+
+
+def reg_domain(url: str) -> str:
+    from backend.trust_signals import registered_domain
+    return registered_domain((urlparse(url).hostname or "").lower())
+
+
+def load_domain_list(path: str | None) -> set[str]:
+    if not path:
+        return set()
+    return {line.strip().lower() for line in Path(path).read_text(errors="ignore").splitlines() if line.strip()}
+
+
+def dedupe_domains(urls: list[str], exclude: set[str]) -> tuple[list[str], int, int]:
+    """Keep the first URL per registered domain; drop domains in `exclude`. Returns (kept, dropped_dupes, dropped_train)."""
+    seen, kept, dup, tr = set(), [], 0, 0
+    for u in urls:
+        d = reg_domain(u)
+        if d in exclude:
+            tr += 1
+        elif d in seen:
+            dup += 1
+        else:
+            seen.add(d)
+            kept.append(u)
+    return kept, dup, tr
+
+
+def page_complexity(html: str, final_url: str) -> dict:
+    """Page-intrinsic descriptors used for strata (no site names involved)."""
+    out = {"html_bytes": len(html.encode("utf-8", "ignore")), "n_scripts": None, "n_ext_domains": None,
+           "has_password": None, "complex": None}
+    try:
+        from backend.scan_intel import _soup, network_footprint
+        soup = _soup(html[:1_500_000])
+        out["n_scripts"] = len(soup.find_all("script"))
+        out["has_password"] = bool(soup.find("input", attrs={"type": lambda v: v and v.lower() == "password"}))
+        net = network_footprint(html, final_url, resolve_limit=0)
+        out["n_ext_domains"] = len(net.get("external_domains", [])) if net.get("status") == "ok" else None
+        out["complex"] = bool(out["html_bytes"] >= COMPLEX_HTML_BYTES or out["n_scripts"] >= COMPLEX_SCRIPTS
+                              or (out["n_ext_domains"] or 0) >= COMPLEX_EXTERNAL_DOMAINS)
+    except Exception:
+        pass
+    return out
 
 
 # --------------------------------------------------------------------------
@@ -235,6 +299,11 @@ def run(args, fetch=None, sources=None) -> list[dict]:
 
     phish, n1 = load_p(args.phish, rng, args.phish_file)
     legit, n2 = load_l(args.legit, rng, args.legit_file)
+    exclude = load_domain_list(getattr(args, "train_domains", None))
+    phish, d1, t1 = dedupe_domains(phish, exclude)
+    legit, d2, t2 = dedupe_domains(legit, exclude)
+    n1 = n1 + [f"domain hygiene: phishing dropped {d1} same-domain and {t1} training-domain URLs; "
+               f"legitimate dropped {d2} and {t2}" + ("" if exclude else " (no --train-domains file given: unseen-domain status NOT guaranteed)")]
     items = [(u, "phishing", 1) for u in phish] + [(u, "legitimate", 0) for u in legit]
     if args.hard_negatives:
         items += [(u, "hard_negative", 0) for u in HARD_NEGATIVES]
@@ -254,13 +323,16 @@ def run(args, fetch=None, sources=None) -> list[dict]:
         f = fetched[url]
         row = {"group": group, "label": label, "url": url, "fetched": f["ok"], "error": f.get("error", ""),
                "final_url": f.get("final_url", ""), "url_only_p": None, "deployed_p": None, "url_p": None,
-               "html_p": None, "text_p": None, "research_p": None, "research_mode": "", "final_verdict": ""}
+               "html_p": None, "text_p": None, "research_p": None, "research_mode": "", "final_verdict": "",
+               "reg_domain": reg_domain(url), "html_bytes": None, "n_scripts": None, "n_ext_domains": None,
+               "has_password": None, "complex": None}
         try:
             row["url_only_p"] = round(score_deployed_url_only(url), 6)
         except Exception as exc:
             row["error"] = (row["error"] + f" url-score:{type(exc).__name__}").strip()
         if f["ok"]:
             html = f["html"]
+            row.update(page_complexity(html, f["final_url"]))
             try:
                 r = predict_website(url, html)
                 row.update(deployed_p=r["hybrid_probability"], url_p=r["branch_probabilities"]["url"],
@@ -318,6 +390,43 @@ def _pairs(rows, key):
     return [int(r["label"]) for r in use], [float(r[key]) for r in use]
 
 
+def _truthy(v) -> bool:
+    return str(v) in ("True", "true", "1")
+
+
+def strata_section(fetched: list[dict]) -> list[str]:
+    if not any(r.get("complex") not in (None, "") for r in fetched):
+        return []
+    scored = [r for r in fetched if r.get("deployed_p") not in (None, "") and r.get("complex") not in (None, "")]
+    L = ["## 4b. By page type (defined from the page itself, thresholds fixed in advance)", "",
+         f"Complex page = HTML >= {COMPLEX_HTML_BYTES:,} bytes, or >= {COMPLEX_SCRIPTS} scripts, or >= {COMPLEX_EXTERNAL_DOMAINS} external domains. "
+         "Login page = contains a password field.", "",
+         "| Stratum | Legitimate n | Phishing n | Legitimate wrongly flagged @0.70 | Legitimate wrongly flagged @0.85 | Phishing caught @0.70 | Phishing caught @0.85 |",
+         "|---|---|---|---|---|---|---|"]
+    strata = [("all fetched pages", lambda r: True), ("complex pages", lambda r: _truthy(r["complex"])),
+              ("simple pages", lambda r: not _truthy(r["complex"])), ("login pages", lambda r: _truthy(r.get("has_password")))]
+    thin = []
+    for name, f in strata:
+        rows = [r for r in scored if f(r)]
+        neg = [r for r in rows if int(r["label"]) == 0]
+        pos = [r for r in rows if int(r["label"]) == 1]
+        def cell(group, thr, want_hit):
+            if len(group) < MIN_STRATUM_N:
+                return f"too few (n={len(group)})"
+            k = sum(1 for r in group if float(r["deployed_p"]) >= thr)
+            return rate_text(k, len(group))
+        L.append(f"| {name} | {len(neg)} | {len(pos)} | {cell(neg, 0.70, True)} | {cell(neg, 0.85, True)} | {cell(pos, 0.70, True)} | {cell(pos, 0.85, True)} |")
+        if len(neg) < MIN_STRATUM_N or len(pos) < MIN_STRATUM_N:
+            thin.append(name)
+    L += ["", f"Cells with fewer than {MIN_STRATUM_N} pages are not reported as rates: a handful of pages cannot support a conclusion."]
+    cx = [r for r in scored if _truthy(r["complex"])]
+    if cx and sum(1 for r in cx if int(r["label"]) == 1) < MIN_STRATUM_N:
+        L += ["", "**Shortcut warning:** almost all complex pages in this sample are legitimate. A model can then score well by learning "
+              "\"big page = legitimate\" without learning anything about phishing. To test that, collect complex phishing pages "
+              "(compromised sites, phishing kits that clone large sites) and complex legitimate login pages before trusting any complex-page number."]
+    return L + [""]
+
+
 def build_report(results: list[dict], args, source_notes: list[str]) -> str:
     now = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
     ph, lg, hn = _g(results, "phishing"), _g(results, "legitimate"), _g(results, "hard_negative")
@@ -361,9 +470,14 @@ def build_report(results: list[dict], args, source_notes: list[str]) -> str:
             L.append(f"| {name} (n={len(rows)}) | " + " | ".join(rate_text(cnt[v], len(rows)) for v in verdicts) + " |")
         L.append("")
 
-    # 5. Hard negatives
+    # 4b. Strata
+    L += strata_section(fetched)
+
+    # 5. Named-site sanity set
     if hn:
-        L += ["## 5. Hard negatives (well-known sites that discuss phishing/security)", "",
+        L += ["## 5. Named-site sanity set (regression check only)", "",
+              "These are well-known sites. They are **not** part of any headline number above, and must never be used for "
+              "tuning thresholds, adding allow-lists or training. A model that is fixed for these names is overfitted, not better.", "",
               "| URL | Fetched | Deployed score | URL | HTML | Text | Final verdict |", "|---|---|---|---|---|---|---|"]
         for r in hn:
             f = lambda v: "" if v in (None, "") else f"{float(v):.2f}"
@@ -402,6 +516,7 @@ def main(argv=None):
     ap.add_argument("--with-trust", action="store_true")
     ap.add_argument("--phish-file")
     ap.add_argument("--legit-file")
+    ap.add_argument("--train-domains")
     ap.add_argument("--research-app")
     ap.add_argument("--research-models")
     ap.add_argument("--out", default="eval_out")
