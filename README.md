@@ -214,3 +214,9 @@ Input columns: `url`, `label` (1 = phishing), the six HTML feature columns plus 
 in `requirements.txt`, compare v2 against the current model with `scripts/evaluate_live.py`, and
 copy it over `compphish_hybrid_model.joblib` only if the live results are better. If the bundle
 contains `bands`, the app uses them; otherwise it keeps 0.40 / 0.85.
+
+## Overview page
+
+The Overview page shows only real information: a scan box, this session's scans (counts, average risk, risk chart, verdict mix, recent scans), live API status (online, waking up, offline), and the live model's bands. Nothing is simulated.
+
+To show measured accuracy there, run `scripts/evaluate_live.py`, then copy `eval_out/summary.json` to `models/evaluation_summary.json` and redeploy. It reports the deployed model at the 0.85 band with 95% confidence intervals, and says whether the tested domains were checked against the training set.

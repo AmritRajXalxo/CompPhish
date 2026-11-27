@@ -116,13 +116,18 @@ def health():
 
     try:
 
-        from backend.prediction_service import MODEL
+        from backend import prediction_service as ps
+        MODEL = ps.MODEL
 
         return {
             "status": "ok",
             "model_loaded": MODEL is not None,
             "model_name": MODEL.get("model_name"),
             "threshold": MODEL.get("threshold"),
+            "bands": {
+                "legitimate_below": ps.LOW_THRESHOLD,
+                "phishing_at_or_above": ps.HIGH_THRESHOLD,
+            },
         }
 
     except Exception as exc:
