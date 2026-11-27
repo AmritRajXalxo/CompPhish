@@ -94,3 +94,17 @@ def test_app_has_no_demo_data_or_unbalanced_wrappers():
     # a wrapper opened in one st.markdown and closed in another renders as an empty box
     assert not re.search(r'st\.markdown\("</div>"', src)
     assert not re.search(r'st\.markdown\("<div class=.(surface|scanner-box).>"\s*,\s*unsafe', src)
+
+
+def test_compact_result_strip():
+    strip = ov.compact_result_html({"prediction": "PHISHING", "risk_score": 91.2, "final_url": "https://x.example/<b>"})
+    assert "Phishing" in strip and "91.2% risk" in strip and "<b>" not in strip and "\n" not in strip
+    for bad in (None, {}, {"prediction": "PHISHING", "risk_score": 500}, {"prediction": "??", "risk_score": 5}, "x"):
+        assert ov.compact_result_html(bad) is None
+
+
+def test_overview_is_compact_and_scanner_is_full():
+    src = (ROOT / "frontend" / "app_flagship.py").read_text()
+    assert 'scanner_section("overview", "Check a website", compact=True)' in src
+    assert 'scanner_section("scanner")' in src
+    assert 'key="page"' in src and "go_to_scanner" in src

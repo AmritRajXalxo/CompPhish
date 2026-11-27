@@ -330,13 +330,18 @@ def plot_layout(fig: go.Figure, height: int = 270) -> go.Figure:
 def metric_card(label: str, value: str, foot: str, accent: str = "#53d8e8") -> str:
     return f"""<div class='metric-card'><span class='metric-accent' style='background:{accent};box-shadow:0 0 14px {accent}'></span><div class='metric-label'>{label}</div><div class='metric-value'>{value}</div><div class='metric-foot'>{foot}</div></div>"""
 
-def scanner_section(key: str, title: str = "Run a live website assessment") -> None:
-    """URL form plus the result of the last scan. `key` keeps widget ids unique per page."""
-    section(title, "FASTAPI · POST /SCAN")
+def go_to_scanner() -> None:
+    st.session_state["page"] = "Live scanner"
+
+
+def scanner_section(key: str, title: str = "Run a live website assessment", compact: bool = False) -> None:
+    """URL form plus the result of the last scan. `key` keeps widget ids unique per page.
+    compact=True (Overview): short form and a one-line verdict, with a button to the full report."""
+    section(title, "QUICK CHECK" if compact else "FASTAPI · POST /SCAN")
     with st.form(f"live_scan_form_{key}", clear_on_submit=False):
         url_input = st.text_input("Website URL", placeholder="https://example.com", label_visibility="collapsed")
-        want_preview = st.checkbox("Also show a site screenshot (sends the address to the third-party service thum.io)", value=False)
-        scan_clicked = st.form_submit_button("Analyse website  →", use_container_width=True)
+        want_preview = False if compact else st.checkbox("Also show a site screenshot (sends the address to the third-party service thum.io)", value=False)
+        scan_clicked = st.form_submit_button("Check website  →" if compact else "Analyse website  →", use_container_width=True)
     st.markdown("<div style='color:#8792a8;font-size:11px;margin-top:7px'>Only scan websites you are authorised to assess. Do not submit credentials or sensitive URLs.</div>", unsafe_allow_html=True)
 
     if scan_clicked:
@@ -355,6 +360,13 @@ def scanner_section(key: str, title: str = "Run a live website assessment") -> N
 
     if st.session_state.get("last_scan_error"):
         st.error(st.session_state["last_scan_error"])
+
+    if compact:
+        strip = ov.compact_result_html(st.session_state.get("last_scan"), st.session_state.get("last_submitted_url", ""))
+        if strip:
+            st.markdown(strip, unsafe_allow_html=True)
+            st.button("View full report  →", key=f"full_report_{key}", on_click=go_to_scanner)
+        return
 
     if "last_scan" in st.session_state:
         data = st.session_state["last_scan"]
@@ -433,7 +445,7 @@ with st.sidebar:
         unsafe_allow_html=True,
     )
     st.markdown("<div class='side-label'>WORKSPACE</div>", unsafe_allow_html=True)
-    page = st.radio("Navigation", ["Overview", "Live scanner", "Model intelligence"], label_visibility="collapsed")
+    page = st.radio("Navigation", ["Overview", "Live scanner", "Model intelligence"], key="page", label_visibility="collapsed")
     st.markdown("<div class='side-label'>SYSTEM</div>", unsafe_allow_html=True)
     st.markdown(
         f"<div class='side-note'><b style='color:#e9eef8'>API endpoint</b><br><span style='font-family:DM Mono;font-size:10px'>{html.escape(API_BASE_URL)}</span><br><br>{ov.status_html(API_STATUS)}</div>",
@@ -453,7 +465,7 @@ st.markdown(
 # 6. OVERVIEW PAGE (real data only)
 # ============================================================
 if page == "Overview":
-    scanner_section("overview", "Check a website")
+    scanner_section("overview", "Check a website", compact=True)
     history = st.session_state.get("scan_history") or []
     summary = ov.summarise_history(history)
     eval_summary = ov.load_eval_summary()
