@@ -220,3 +220,7 @@ contains `bands`, the app uses them; otherwise it keeps 0.40 / 0.85.
 The Overview page shows only real information: a scan box, this session's scans (counts, average risk, risk chart, verdict mix, recent scans), live API status (online, waking up, offline), and the live model's bands. Nothing is simulated.
 
 To show measured accuracy there, run `scripts/evaluate_live.py`, then copy `eval_out/summary.json` to `models/evaluation_summary.json` and redeploy. It reports the deployed model at the 0.85 band with 95% confidence intervals, and says whether the tested domains were checked against the training set.
+
+## Model intelligence page
+
+The page is built from the loaded model file through `GET /model-info`: fusion weights, top URL and HTML features, strongest text terms, decision bands and whether the model was retrained with unseen-domain splits. It also shows the verdict pipeline, known limitations and a component status table. If the API is waking up or is an older version without `/model-info`, the page says so and still shows the static sections.
