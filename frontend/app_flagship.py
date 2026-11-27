@@ -81,7 +81,8 @@ footer {
     opacity: 1 !important;
 }
     [data-testid="stDecoration"] { display:none; }
-    .block-container { max-width: 1450px; padding: 1.6rem 2.4rem 3rem; }
+    [data-testid="stPlotlyChart"] { background:linear-gradient(145deg,rgba(20,26,38,.88),rgba(14,18,27,.92));border:1px solid var(--line);border-radius:16px;padding:10px 8px 4px; }
+    .block-container { max-width: 1450px; padding: 3.4rem 2.4rem 3rem; }
     [data-testid="stSidebar"] { background: linear-gradient(180deg,#10141d 0%,#0c1017 100%); border-right:1px solid var(--line); }
     [data-testid="stSidebar"] > div:first-child { padding-top: 1.5rem; }
     [data-testid="stSidebar"] [data-testid="stMarkdownContainer"] p { color:var(--muted); }
@@ -109,7 +110,7 @@ footer {
     .scanner-box { background:linear-gradient(135deg,rgba(24,30,46,.95),rgba(14,19,29,.96));border:1px solid rgba(139,124,255,.26);border-radius:18px;padding:20px;box-shadow:0 12px 42px rgba(0,0,0,.18); }
     div[data-testid="stTextInput"] input { background:#0d121c!important;color:#eef2fb!important;border:1px solid rgba(155,170,198,.2)!important;border-radius:10px!important;min-height:46px; }
     div[data-testid="stTextInput"] input:focus { border-color:#8b7cff!important;box-shadow:0 0 0 1px #8b7cff!important; }
-    div[data-testid="stForm"] { background:transparent;border:0;padding:0; }
+    div[data-testid="stForm"] { background:linear-gradient(135deg,rgba(24,30,46,.95),rgba(14,19,29,.96));border:1px solid rgba(139,124,255,.26)!important;border-radius:18px;padding:20px; }
     div[data-testid="stFormSubmitButton"] button, div.stButton>button { background:linear-gradient(100deg,#8b7cff,#6d9cff)!important;color:#090b10!important;border:0!important;border-radius:10px!important;font-weight:800!important;min-height:44px;transition:all .2s ease; }
     div[data-testid="stFormSubmitButton"] button:hover, div.stButton>button:hover { box-shadow:0 0 24px rgba(139,124,255,.28);filter:brightness(1.08);transform:translateY(-1px); }
     .result-hero { background:linear-gradient(130deg,rgba(27,34,52,.98),rgba(15,20,31,.98));border:1px solid var(--line);border-radius:18px;padding:22px; }
@@ -130,10 +131,13 @@ footer {
     .info-val { color:#e5eaf5;text-align:right;overflow-wrap:anywhere; }
     .notice { color:#748099;font-size:10px;line-height:1.7;text-align:center;margin:26px 0 5px; }
     .demo-chip { display:inline-block;color:#f4c879;background:rgba(246,189,96,.08);border:1px solid rgba(246,189,96,.2);border-radius:6px;padding:4px 7px;font:9px 'DM Mono',monospace;letter-spacing:.8px; }
+    .info-key, .metric-foot, .section-meta, .brand-sub, .side-label { color:#9aa6bd; }
+    .eyebrow, .branch-title, .risk-kicker { color:#a3aec4; }
+    .notice { color:#9aa6bd; }
     .stAlert { border-radius:12px!important; }
     [data-testid="stExpander"] { background:rgba(255,255,255,.025);border:1px solid var(--line);border-radius:12px; }
     [data-testid="stMetric"] { background:transparent; }
-    @media(max-width:800px){.block-container{padding:1.2rem 1rem 2rem}.page-title{font-size:27px}.topline{align-items:flex-start}.risk-number{font-size:40px}}
+    @media(max-width:800px){.block-container{padding:3rem 1rem 2rem}.page-title{font-size:27px}.topline{align-items:flex-start}.risk-number{font-size:40px}}
     </style>
     """,
     unsafe_allow_html=True,
@@ -354,7 +358,7 @@ with st.sidebar:
 # 5. HEADER
 # ============================================================
 st.markdown(
-    "<div class='topline'><div><div class='eyebrow'>THREAT MONITORING / COMPPhISH</div><div class='page-title'>Website Security Intelligence</div><div class='page-sub'>A multi-layer view of web risk, signals and model decisions.</div></div><div class='live-pill'>● LOCAL WORKSPACE</div></div>",
+    "<div class='topline'><div><div class='eyebrow'>THREAT MONITORING / COMPHISH</div><div class='page-title'>Website Security Intelligence</div><div class='page-sub'>A multi-layer view of web risk, signals and model decisions.</div></div><div class='live-pill'>● LOCAL WORKSPACE</div></div>",
     unsafe_allow_html=True,
 )
 
@@ -385,15 +389,11 @@ if page == "Overview":
         fig.add_trace(go.Scatter(x=days, y=safe, name="Low-risk", mode="lines+markers", line=dict(color="#53d8e8", width=2.5), marker=dict(size=5), fill="tozeroy", fillcolor="rgba(83,216,232,.08)"))
         fig.add_trace(go.Scatter(x=days, y=flagged, name="Flagged", mode="lines+markers", line=dict(color="#ff6e83", width=2.5), marker=dict(size=5), fill="tozeroy", fillcolor="rgba(255,110,131,.08)"))
         fig.update_layout(hovermode="x unified")
-        st.markdown("<div class='surface'>", unsafe_allow_html=True)
         st.plotly_chart(plot_layout(fig, 300), use_container_width=True, config={"displayModeBar": False, "responsive": True})
-        st.markdown("</div>", unsafe_allow_html=True)
     with donut_col:
         donut = go.Figure(go.Pie(labels=["Low risk", "Elevated", "High risk"], values=[71, 18, 11], hole=.76, sort=False, marker=dict(colors=["#53d8e8", "#8b7cff", "#ff6e83"], line=dict(color="#111722", width=3)), textinfo="none", hovertemplate="%{label}: %{percent}<extra></extra>"))
         donut.update_layout(showlegend=True, legend=dict(orientation="h", y=-.08, x=.02), annotations=[dict(text="Risk<br>mix", x=.5, y=.5, showarrow=False, font=dict(size=16, color="#edf2fb", family="DM Sans"))])
-        st.markdown("<div class='surface'>", unsafe_allow_html=True)
         st.plotly_chart(plot_layout(donut, 300), use_container_width=True, config={"displayModeBar": False, "responsive": True})
-        st.markdown("</div>", unsafe_allow_html=True)
 
     st.markdown("<div class='section-head'><div class='section-title'>Intelligence layers</div><div class='section-meta'>CURRENT MODEL CONFIGURATION</div></div>", unsafe_allow_html=True)
     layer_cols = st.columns(3, gap="medium")
@@ -407,12 +407,11 @@ if page == "Overview":
 # ============================================================
 elif page == "Live scanner":
     st.markdown("<div class='section-head'><div class='section-title'>Run a live website assessment</div><div class='section-meta'>FASTAPI · POST /SCAN</div></div>", unsafe_allow_html=True)
-    st.markdown("<div class='scanner-box'>", unsafe_allow_html=True)
     with st.form("live_scan_form", clear_on_submit=False):
         url_input = st.text_input("Website URL", placeholder="https://example.com", label_visibility="collapsed")
         want_preview = st.checkbox("Also show a site screenshot (sends the address to the third-party service thum.io)", value=False)
         scan_clicked = st.form_submit_button("Analyse website  →", use_container_width=True)
-    st.markdown("<div style='color:#77839b;font-size:10px;margin-top:7px'>Only scan websites you are authorised to assess. Do not submit credentials or sensitive URLs.</div></div>", unsafe_allow_html=True)
+    st.markdown("<div style='color:#8792a8;font-size:11px;margin-top:7px'>Only scan websites you are authorised to assess. Do not submit credentials or sensitive URLs.</div>", unsafe_allow_html=True)
 
     if scan_clicked:
         try:
@@ -473,9 +472,7 @@ elif page == "Live scanner":
                 st.info(str(data["decision_note"]))
         with result_cols[1]:
             gauge = go.Figure(go.Indicator(mode="gauge+number", value=risk, number={"suffix": "%", "font": {"color": "#edf2fb", "size": 29}}, gauge={"axis": {"range": [0, 100], "tickcolor": "#748099", "tickfont": {"color": "#748099"}}, "bar": {"color": tint, "thickness": .22}, "bgcolor": "rgba(0,0,0,0)", "borderwidth": 0, "steps": [{"range": [0, 40], "color": "rgba(83,216,232,.08)"}, {"range": [40, 70], "color": "rgba(139,124,255,.10)"}, {"range": [70, 100], "color": "rgba(255,110,131,.10)"}]}))
-            st.markdown("<div class='surface'>", unsafe_allow_html=True)
             st.plotly_chart(plot_layout(gauge, 220), use_container_width=True, config={"displayModeBar": False})
-            st.markdown("</div>", unsafe_allow_html=True)
 
         st.markdown("<div class='section-head'><div class='section-title'>Branch signal breakdown</div><div class='section-meta'>MODEL OUTPUTS · PROBABILITY</div></div>", unsafe_allow_html=True)
         bcols = st.columns(3, gap="medium")
@@ -501,9 +498,7 @@ elif page == "Model intelligence":
         node=dict(pad=24, thickness=18, line=dict(color="rgba(155,170,198,.25)", width=1), label=["URL features", "HTML features", "Page text", "URL model", "HTML model", "Text model", "Fusion model", "Prediction"], color=["#4c8caa", "#766bd1", "#368e91", "#4c8caa", "#766bd1", "#368e91", "#8b7cff", "#57d6a1"]),
         link=dict(source=[0,1,2,3,4,5,6], target=[3,4,5,6,6,6,7], value=[1,1,1,1,1,1,3], color=["rgba(83,216,232,.25)","rgba(139,124,255,.25)","rgba(87,214,161,.22)","rgba(83,216,232,.3)","rgba(139,124,255,.3)","rgba(87,214,161,.3)","rgba(139,124,255,.35)"]),
     ))
-    st.markdown("<div class='surface'>", unsafe_allow_html=True)
     st.plotly_chart(plot_layout(architecture, 390), use_container_width=True, config={"displayModeBar": False})
-    st.markdown("</div>", unsafe_allow_html=True)
     st.markdown("<div class='section-head'><div class='section-title'>Implementation boundary</div><div class='section-meta'>TRANSPARENT STATUS</div></div>", unsafe_allow_html=True)
     status_cols = st.columns(2, gap="medium")
     with status_cols[0]:
