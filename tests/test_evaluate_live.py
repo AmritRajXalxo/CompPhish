@@ -47,7 +47,7 @@ def _fake_run(tmp_path, monkeypatch, with_trust=False):
         return {"final_url": url, "html": html}
 
     sources = {
-        "phish": lambda n, rng, path: ([f"http://login-secure{i}.example-bad.top/verify?id={i}" for i in range(5)] + ["http://dead.example-bad.top/"], ["fake phishing source"]),
+        "phish": lambda n, rng, path: ([f"http://login-secure{i}.bad-site{i}.top/verify?id={i}" for i in range(5)] + ["http://dead.dead-site.top/"], ["fake phishing source"]),
         "legit": lambda n, rng, path: ([f"https://www.site{i}.com/" for i in range(6)], ["fake legit source"]),
     }
     if with_trust:
@@ -86,3 +86,61 @@ def test_report_rebuilds_from_csv(tmp_path, monkeypatch):
     ev.write_outputs(results, tmp_path / "o1", args, ["n"])
     ev.main(["--from-results", str(tmp_path / "o1" / "results.csv"), "--out", str(tmp_path / "o2")])
     assert "Read this first" in (tmp_path / "o2" / "report.md").read_text()
+
+
+# ---- unseen-domain design rules ----
+def test_dedupe_keeps_one_url_per_domain_and_drops_training_domains():
+    urls = ["https://a.example.com/x", "https://www.example.com/y", "https://other.org/", "https://seen-in-training.net/z"]
+    kept, dup, tr = ev.dedupe_domains(urls, exclude={"seen-in-training.net"})
+    assert kept == ["https://a.example.com/x", "https://other.org/"]
+    assert (dup, tr) == (1, 1)
+
+
+def test_domain_list_loader(tmp_path):
+    f = tmp_path / "d.txt"
+    f.write_text("Example.com\n\n  other.org  \n")
+    assert ev.load_domain_list(str(f)) == {"example.com", "other.org"}
+    assert ev.load_domain_list(None) == set()
+
+
+def test_page_complexity_uses_fixed_thresholds_not_names():
+    small = "<html><body><script></script></body></html>"
+    c = ev.page_complexity(small, "https://google.com/")           # famous name changes nothing
+    assert c["complex"] is False and c["has_password"] is False
+    many = "<html><body>" + "<script src='https://c%d.example/x.js'></script>" % 0 + "".join(f"<script src='https://cdn{i}.net/a.js'></script>" for i in range(12)) + "</body></html>"
+    assert ev.page_complexity(many, "https://x.test/")["complex"] is True      # >= 10 external domains
+    big = "<html><body>" + "x" * 250_000 + "</body></html>"
+    assert ev.page_complexity(big, "https://x.test/")["complex"] is True       # >= 200 KB
+    login = "<form><input type='PASSWORD'></form>"
+    assert ev.page_complexity(login, "https://x.test/")["has_password"] is True
+
+
+def _row(label, p, cx, pw=False, group=None):
+    return {"group": group or ("phishing" if label else "legitimate"), "label": label, "url": "u", "fetched": True, "error": "",
+            "deployed_p": p, "url_p": p, "html_p": p, "text_p": p, "url_only_p": p, "complex": cx, "has_password": pw,
+            "final_verdict": "", "research_p": None}
+
+
+def test_strata_table_hides_tiny_cells_and_warns_about_shortcut():
+    rows = [_row(0, 0.9, True) for _ in range(40)] + [_row(0, 0.1, False) for _ in range(40)] + [_row(1, 0.9, False) for _ in range(40)] \
+           + [_row(1, 0.9, True) for _ in range(3)]
+    text = "\n".join(ev.strata_section(rows))
+    assert "complex pages" in text and "simple pages" in text and "login pages" in text
+    assert "too few (n=3)" in text                     # complex phishing: 3 pages -> no rate
+    assert "Shortcut warning" in text
+    assert ev.strata_section([_row(0, 0.1, None)]) == []   # old CSVs without strata columns
+
+
+def test_report_marks_named_sites_as_sanity_only(tmp_path, monkeypatch):
+    args, results = _fake_run(tmp_path, monkeypatch)
+    for r in results[:2]:
+        r["group"] = "hard_negative"
+    text = ev.build_report(results, args, ["n"])
+    assert "regression check only" in text and "never be used for" in text
+
+
+def test_run_records_domains_and_flags_missing_train_domains(tmp_path, monkeypatch):
+    args, results = _fake_run(tmp_path, monkeypatch)
+    assert all(r["reg_domain"] for r in results)
+    assert "complex" in results[0]
+    assert "NOT guaranteed" in "\n".join(ev.run.source_notes)
