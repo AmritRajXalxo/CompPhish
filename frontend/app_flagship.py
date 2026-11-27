@@ -21,9 +21,11 @@ except ImportError as exc:  # clear setup message if Plotly is not installed
 try:  # Streamlit puts the script folder on sys.path
     import ui_components as ui
     import overview as ov
+    import model_page as mp
 except ImportError:  # pragma: no cover - e.g. run from another working directory
     from frontend import ui_components as ui
     from frontend import overview as ov
+    from frontend import model_page as mp
 
 st.set_page_config(
     page_title="CompPhish | Security Intelligence",
@@ -431,6 +433,16 @@ def _api_status(base_url: str) -> dict:
     return ov.check_api(base_url)
 
 
+@st.cache_data(ttl=300, show_spinner=False)
+def _model_info(base_url: str):
+    try:
+        r = requests.get(base_url + "/model-info", timeout=8)
+        r.raise_for_status()
+        return mp.validate_info(r.json())
+    except Exception:
+        return None
+
+
 API_STATUS = _api_status(API_BASE_URL)
 _b = API_STATUS.get("bands") or {}
 API_STATUS_LOW = float(_b.get("legitimate_below", 0.40))
@@ -520,20 +532,49 @@ elif page == "Live scanner":
 # 8. MODEL INTELLIGENCE PAGE
 # ============================================================
 elif page == "Model intelligence":
-    st.markdown("<div class='section-head'><div class='section-title'>Model architecture</div><div class='section-meta'>IMPLEMENTED IN CURRENT BUNDLE</div></div>", unsafe_allow_html=True)
-    st.info("This view describes the currently configured three-branch CompPhish model. Domain intelligence, graph intelligence, GA feature selection, fuzzy logic and SHAP are not represented as implemented components here.")
-    architecture = go.Figure(go.Sankey(
-        arrangement="snap",
-        node=dict(pad=24, thickness=18, line=dict(color="rgba(155,170,198,.25)", width=1), label=["URL features", "HTML features", "Page text", "URL model", "HTML model", "Text model", "Fusion model", "Prediction"], color=["#4c8caa", "#766bd1", "#368e91", "#4c8caa", "#766bd1", "#368e91", "#8b7cff", "#57d6a1"]),
-        link=dict(source=[0,1,2,3,4,5,6], target=[3,4,5,6,6,6,7], value=[1,1,1,1,1,1,3], color=["rgba(83,216,232,.25)","rgba(139,124,255,.25)","rgba(87,214,161,.22)","rgba(83,216,232,.3)","rgba(139,124,255,.3)","rgba(87,214,161,.3)","rgba(139,124,255,.35)"]),
-    ))
-    st.plotly_chart(plot_layout(architecture, 390), use_container_width=True, config={"displayModeBar": False})
-    st.markdown("<div class='section-head'><div class='section-title'>Implementation boundary</div><div class='section-meta'>TRANSPARENT STATUS</div></div>", unsafe_allow_html=True)
-    status_cols = st.columns(2, gap="medium")
-    with status_cols[0]:
-        st.markdown("<div class='surface'><div style='color:#57d6a1;font-weight:700;margin-bottom:10px'>● Implemented</div><div style='color:#cbd4e5;font-size:12px;line-height:2'>URL feature branch<br>HTML structural branch<br>Page-text branch<br>Hybrid fusion / stacking<br>Threshold-based classification</div></div>", unsafe_allow_html=True)
-    with status_cols[1]:
-        st.markdown("<div class='surface'><div style='color:#f6bd60;font-weight:700;margin-bottom:10px'>○ Proposed / pending verification</div><div style='color:#cbd4e5;font-size:12px;line-height:2'>Domain intelligence<br>Graph intelligence<br>Genetic Algorithm feature selection<br>Fuzzy decision layer<br>SHAP explanations</div></div>", unsafe_allow_html=True)
+    info = _model_info(API_BASE_URL)
+    eval_summary = ov.load_eval_summary()
+
+    section("How a verdict is made", "FROM PAGE TO FINAL VERDICT")
+    cards = mp.pipeline_cards()
+    for row in (cards[:4], cards[4:]):
+        for col, c in zip(st.columns(len(row), gap="medium"), row):
+            with col:
+                st.markdown(c, unsafe_allow_html=True)
+        st.markdown("<div style='height:10px'></div>", unsafe_allow_html=True)
+
+    if info is None:
+        st.info("Model details are not available right now. The API may be waking up (try again in about 30 seconds) or it may be an older version without /model-info.")
+    else:
+        section("How much each signal counts", "FUSION MODEL WEIGHTS")
+        wcol, bcol = st.columns([1.4, 1], gap="large")
+        with wcol:
+            if info["weights"]:
+                st.markdown(mp.card("Fusion weights (log-odds per unit of branch probability)", mp.bars_html(info["weights"], "#8b7cff", "{:.2f}", 1.0),
+                                    mp.weights_note(info["weights"])), unsafe_allow_html=True)
+        with bcol:
+            body = (f"<div style='color:#dce4f2;font-size:13px'>{mp.esc(info['name'])}</div>"
+                    f"<div class='metric-foot' style='margin-top:8px'>URL: {info['url_features'] or '?'} features &middot; HTML: {info['html_features'] or '?'} features &middot; text: TF-IDF</div>"
+                    f"<div class='metric-foot' style='margin-top:6px'>Legitimate below {info['low']:.2f} &middot; phishing at or above {info['high']:.2f}</div>"
+                    + (f"<div class='metric-foot' style='margin-top:6px'>Retrained {mp.esc(info['trained_at'])} with unseen-domain splits</div>" if info["retrained"] else ""))
+            st.markdown(mp.card("Live model", body), unsafe_allow_html=True)
+
+        section("What each branch looks at", "FROM THE TRAINED MODELS")
+        c1, c2, c3 = st.columns(3, gap="medium")
+        with c1:
+            st.markdown(mp.card("URL branch: top features", mp.bars_html(info["url"], "#53d8e8", "{:.1f}%", 100.0), "Share of the trees' decisions. Lengths and entropy describe URL shape, not meaning."), unsafe_allow_html=True)
+        with c2:
+            st.markdown(mp.card("HTML branch: feature importance", mp.bars_html(info["html"], "#8b7cff", "{:.1f}%", 100.0), mp.top_note(info["html"], "Counts such as links and tags also track page size.")), unsafe_allow_html=True)
+        with c3:
+            body = ("<div style='color:#ff91a0;font-size:11px;margin-bottom:2px'>Push toward phishing</div>" + mp.bars_html(info["terms_phish"][:6], "#ff6e83", "{:.1f}", 1.0)
+                    + "<div style='color:#75e3b5;font-size:11px;margin:12px 0 2px'>Push toward legitimate</div>" + mp.bars_html(info["terms_legit"][:6], "#57d6a1", "{:.1f}", 1.0))
+            st.markdown(mp.card("Text branch: strongest words", body, "Years or generic words in these lists would be dataset artefacts, not phishing behaviour."), unsafe_allow_html=True)
+
+    section("Known limitations", "READ BEFORE TRUSTING A SCORE")
+    st.markdown(mp.limitations_html(), unsafe_allow_html=True)
+
+    section("Component status", "WHAT IS AND IS NOT IN THE LIVE APP")
+    st.markdown(mp.status_table_html(info, eval_summary), unsafe_allow_html=True)
 
 # ============================================================
 # 9. FOOTER
