@@ -134,10 +134,12 @@ footer {
     .info-key, .metric-foot, .section-meta, .brand-sub, .side-label { color:#9aa6bd; }
     .eyebrow, .branch-title, .risk-kicker { color:#a3aec4; }
     .notice { color:#9aa6bd; }
+    html, body, .stApp { max-width:100%; overflow-x:hidden; }
+    .section-head { flex-wrap:wrap; gap:4px 14px; }
     .stAlert { border-radius:12px!important; }
     [data-testid="stExpander"] { background:rgba(255,255,255,.025);border:1px solid var(--line);border-radius:12px; }
     [data-testid="stMetric"] { background:transparent; }
-    @media(max-width:800px){.block-container{padding:3rem 1rem 2rem}.page-title{font-size:27px}.topline{align-items:flex-start}.risk-number{font-size:40px}}
+    @media(max-width:800px){.metric-card{min-height:96px}.metric-value{font-size:23px}.info-row{flex-wrap:wrap}.block-container{padding:3rem 1rem 2rem}.live-pill{white-space:normal}.page-title{font-size:27px}.topline{align-items:flex-start}.risk-number{font-size:40px}}
     </style>
     """,
     unsafe_allow_html=True,
@@ -386,14 +388,20 @@ if page == "Overview":
         safe = [182, 205, 194, 231, 218, 247, 239]
         flagged = [24, 31, 28, 39, 34, 42, 37]
         fig = go.Figure()
-        fig.add_trace(go.Scatter(x=days, y=safe, name="Low-risk", mode="lines+markers", line=dict(color="#53d8e8", width=2.5), marker=dict(size=5), fill="tozeroy", fillcolor="rgba(83,216,232,.08)"))
-        fig.add_trace(go.Scatter(x=days, y=flagged, name="Flagged", mode="lines+markers", line=dict(color="#ff6e83", width=2.5), marker=dict(size=5), fill="tozeroy", fillcolor="rgba(255,110,131,.08)"))
-        fig.update_layout(hovermode="x unified")
-        st.plotly_chart(plot_layout(fig, 300), use_container_width=True, config={"displayModeBar": False, "responsive": True})
+        fig.add_trace(go.Scatter(x=days, y=safe, name="Low-risk", mode="lines+markers", line=dict(color="#53d8e8", width=3), marker=dict(size=7), fill="tozeroy", fillcolor="rgba(83,216,232,.08)"))
+        fig.add_trace(go.Scatter(x=days, y=flagged, name="Flagged", mode="lines+markers", line=dict(color="#ff6e83", width=3), marker=dict(size=7), fill="tozeroy", fillcolor="rgba(255,110,131,.08)"))
+        fig = plot_layout(fig, 300)
+        fig.update_layout(hovermode="x unified", xaxis_title="Day of week", yaxis_title="Scans per day (sample)",
+                          legend=dict(orientation="h", x=1, xanchor="right", y=1.02, yanchor="bottom", font=dict(size=12)),
+                          margin=dict(l=8, r=8, t=34, b=8))
+        st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False, "responsive": True})
     with donut_col:
-        donut = go.Figure(go.Pie(labels=["Low risk", "Elevated", "High risk"], values=[71, 18, 11], hole=.76, sort=False, marker=dict(colors=["#53d8e8", "#8b7cff", "#ff6e83"], line=dict(color="#111722", width=3)), textinfo="none", hovertemplate="%{label}: %{percent}<extra></extra>"))
-        donut.update_layout(showlegend=True, legend=dict(orientation="h", y=-.08, x=.02), annotations=[dict(text="Risk<br>mix", x=.5, y=.5, showarrow=False, font=dict(size=16, color="#edf2fb", family="DM Sans"))])
-        st.plotly_chart(plot_layout(donut, 300), use_container_width=True, config={"displayModeBar": False, "responsive": True})
+        donut = go.Figure(go.Pie(labels=["Low risk · 71%", "Elevated · 18%", "High risk · 11%"], values=[71, 18, 11], hole=.74, sort=False, marker=dict(colors=["#53d8e8", "#8b7cff", "#ff6e83"], line=dict(color="#111722", width=3)), textinfo="none", hovertemplate="%{label}<extra></extra>"))
+        donut = plot_layout(donut, 300)
+        donut.update_layout(showlegend=True, legend=dict(orientation="h", x=0.5, xanchor="center", y=-.04, yanchor="top", font=dict(size=12)),
+                            margin=dict(l=8, r=8, t=14, b=46),
+                            annotations=[dict(text="Share of<br>sample scans", x=.5, y=.5, showarrow=False, font=dict(size=14, color="#edf2fb", family="DM Sans"))])
+        st.plotly_chart(donut, use_container_width=True, config={"displayModeBar": False, "responsive": True})
 
     st.markdown("<div class='section-head'><div class='section-title'>Intelligence layers</div><div class='section-meta'>CURRENT MODEL CONFIGURATION</div></div>", unsafe_allow_html=True)
     layer_cols = st.columns(3, gap="medium")
@@ -492,13 +500,16 @@ elif page == "Live scanner":
 # ============================================================
 elif page == "Model intelligence":
     st.markdown("<div class='section-head'><div class='section-title'>Model architecture</div><div class='section-meta'>IMPLEMENTED IN CURRENT BUNDLE</div></div>", unsafe_allow_html=True)
-    st.info("This view describes the currently configured three-branch CompPhish model. Domain intelligence, graph intelligence, GA feature selection, fuzzy logic and SHAP are not represented as implemented components here.")
+    st.info("The live three-branch model. Domain intelligence, graph analysis, GA selection, fuzzy logic and SHAP are not part of it.")
     architecture = go.Figure(go.Sankey(
         arrangement="snap",
-        node=dict(pad=24, thickness=18, line=dict(color="rgba(155,170,198,.25)", width=1), label=["URL features", "HTML features", "Page text", "URL model", "HTML model", "Text model", "Fusion model", "Prediction"], color=["#4c8caa", "#766bd1", "#368e91", "#4c8caa", "#766bd1", "#368e91", "#8b7cff", "#57d6a1"]),
+        node=dict(pad=30, thickness=22, line=dict(color="rgba(155,170,198,.25)", width=1), label=["URL features", "HTML features", "Page text", "URL model", "HTML model", "Text model", "Fusion model", "Prediction"], color=["#4c8caa", "#766bd1", "#368e91", "#4c8caa", "#766bd1", "#368e91", "#8b7cff", "#57d6a1"]),
         link=dict(source=[0,1,2,3,4,5,6], target=[3,4,5,6,6,6,7], value=[1,1,1,1,1,1,3], color=["rgba(83,216,232,.25)","rgba(139,124,255,.25)","rgba(87,214,161,.22)","rgba(83,216,232,.3)","rgba(139,124,255,.3)","rgba(87,214,161,.3)","rgba(139,124,255,.35)"]),
     ))
-    st.plotly_chart(plot_layout(architecture, 390), use_container_width=True, config={"displayModeBar": False})
+    architecture.update_traces(textfont=dict(size=14, color="#edf2fb", family="DM Sans"))
+    architecture = plot_layout(architecture, 420)
+    architecture.update_layout(margin=dict(l=18, r=96, t=18, b=18))
+    st.plotly_chart(architecture, use_container_width=True, config={"displayModeBar": False})
     st.markdown("<div class='section-head'><div class='section-title'>Implementation boundary</div><div class='section-meta'>TRANSPARENT STATUS</div></div>", unsafe_allow_html=True)
     status_cols = st.columns(2, gap="medium")
     with status_cols[0]:
