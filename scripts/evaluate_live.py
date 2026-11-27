@@ -378,7 +378,28 @@ def write_outputs(results: list[dict], out_dir: Path, args, source_notes: list[s
         w.writeheader()
         w.writerows(results)
     (out_dir / "report.md").write_text(build_report(results, args, source_notes))
+    summary = headline_summary(results, args)
+    if summary:
+        import json
+        (out_dir / "summary.json").write_text(json.dumps(summary, indent=2))
     return out_dir / "report.md"
+
+
+def headline_summary(results: list[dict], args) -> dict | None:
+    """Small file the dashboard can show: deployed model at the app's 0.85 phishing band."""
+    scored = [r for r in results if r.get("deployed_p") not in (None, "") and r["group"] in ("phishing", "legitimate")]
+    phish = [r for r in scored if int(r["label"]) == 1]
+    legit = [r for r in scored if int(r["label"]) == 0]
+    if not phish or not legit:
+        return None
+    high = 0.85
+    return {
+        "generated": datetime.now(timezone.utc).strftime("%Y-%m-%d"),
+        "phish_n": len(phish), "phish_caught": sum(1 for r in phish if float(r["deployed_p"]) >= high),
+        "legit_n": len(legit), "legit_flagged": sum(1 for r in legit if float(r["deployed_p"]) >= high),
+        "high_threshold": high,
+        "unseen_domains": bool(getattr(args, "train_domains", None)),
+    }
 
 
 def _g(rows, group):
