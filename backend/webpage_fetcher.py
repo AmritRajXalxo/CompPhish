@@ -10,6 +10,8 @@ import socket
 import time
 
 import httpx
+
+from backend.size_cap import read_capped
 from urllib.parse import urljoin, urlparse
 
 
@@ -125,24 +127,13 @@ def fetch_webpage(url: str) -> dict:
                         "The requested resource is not an HTML webpage."
                     )
 
-                content_length = response.headers.get("content-length")
+                # Very large pages (YouTube, big web apps) are analysed from their first
+                # MAX_HTML_SIZE bytes instead of being rejected. Memory stays bounded.
+                body, truncated = read_capped(
+                    response.iter_bytes(), MAX_HTML_SIZE
+                )
 
-                if content_length:
-                    if int(content_length) > MAX_HTML_SIZE:
-                        raise ValueError("Webpage is too large.")
-
-                chunks = []
-                total_size = 0
-
-                for chunk in response.iter_bytes():
-                    total_size += len(chunk)
-
-                    if total_size > MAX_HTML_SIZE:
-                        raise ValueError("Webpage exceeds the size limit.")
-
-                    chunks.append(chunk)
-
-                html = b"".join(chunks).decode(
+                html = body.decode(
                     response.encoding or "utf-8",
                     errors="replace",
                 )
@@ -154,6 +145,7 @@ def fetch_webpage(url: str) -> dict:
                 return {
                     "final_url": str(response.url),
                     "html": html,
+                    "html_truncated": truncated,
                     "content_type": content_type,
                     "redirect_chain": chain,
                     "status_code": response.status_code,
