@@ -13,12 +13,13 @@ def test_chart_overrides_run_after_the_shared_layout():
     assert SRC.index("architecture = plot_layout(architecture, 420)") < SRC.index("margin=dict(l=18, r=96")
 
 
-def test_donut_has_percent_legend_and_centre_text():
-    assert "Low risk · 71%" in SRC and "High risk · 11%" in SRC and "Share of<br>sample scans" in SRC
+def test_donut_shows_counts_in_legend_and_total_in_centre():
+    assert "{ss.VERDICT_LABEL[v]} · {summary['counts'][v]}" in SRC
+    assert 'text=f"{total}<br>scans"' in SRC
 
 
 def test_line_chart_has_axis_titles():
-    assert 'xaxis_title="Day of week"' in SRC and "Scans per day (sample)" in SRC
+    assert 'xaxis_title="Scan number (oldest to newest)"' in SRC and 'yaxis_title="Risk score (%)"' in SRC
 
 
 def test_sankey_labels_larger_and_banner_short():
