@@ -20,8 +20,10 @@ except ImportError as exc:  # clear setup message if Plotly is not installed
 # ============================================================
 try:  # Streamlit puts the script folder on sys.path
     import ui_components as ui
+    import session_stats as ss
 except ImportError:  # pragma: no cover - e.g. run from another working directory
     from frontend import ui_components as ui
+    from frontend import session_stats as ss
 
 st.set_page_config(
     page_title="CompPhish | Security Intelligence",
@@ -37,13 +39,6 @@ API_BASE_URL = os.getenv(
 API_URL = f"{API_BASE_URL}/scan"
 REQUEST_TIMEOUT = int(os.getenv("REQUEST_TIMEOUT", "90"))
 
-# Demo metrics are synthetic UI preview data. They are never model results.S
-DEMO_METRICS = {
-    "scans": "2,481",
-    "threats": "384",
-    "avg_risk": "18.6%",
-    "uptime": "99.9%",
-}
 
 # ============================================================
 # 2. FLAGSHIP DARK UI
@@ -81,7 +76,7 @@ footer {
     opacity: 1 !important;
 }
     [data-testid="stDecoration"] { display:none; }
-    [data-testid="stPlotlyChart"] { background:linear-gradient(145deg,rgba(20,26,38,.88),rgba(14,18,27,.92));border:1px solid var(--line);border-radius:16px;padding:10px 8px 4px; }
+    [data-testid="stPlotlyChart"] { background:linear-gradient(145deg,rgba(20,26,38,.88),rgba(14,18,27,.92));border:1px solid var(--line);border-radius:16px;padding:0;overflow:hidden; }
     .block-container { max-width: 1450px; padding: 3.4rem 2.4rem 3rem; }
     [data-testid="stSidebar"] { background: linear-gradient(180deg,#10141d 0%,#0c1017 100%); border-right:1px solid var(--line); }
     [data-testid="stSidebar"] > div:first-child { padding-top: 1.5rem; }
@@ -136,6 +131,7 @@ footer {
     .notice { color:#9aa6bd; }
     html, body, .stApp { max-width:100%; overflow-x:hidden; }
     .section-head { flex-wrap:wrap; gap:4px 14px; }
+    .empty-state { text-align:center;color:#9aa6bd;font-size:13px;line-height:1.7;padding:110px 12px; }
     .stAlert { border-radius:12px!important; }
     [data-testid="stExpander"] { background:rgba(255,255,255,.025);border:1px solid var(--line);border-radius:12px; }
     [data-testid="stMetric"] { background:transparent; }
@@ -365,43 +361,53 @@ st.markdown(
 )
 
 # ============================================================
-# 6. OVERVIEW PAGE (synthetic dashboard preview)
+# 6. OVERVIEW PAGE (real session data)
 # ============================================================
 if page == "Overview":
-    st.markdown("<span class='demo-chip'>ILLUSTRATIVE DASHBOARD DATA · NOT LIVE TELEMETRY</span>", unsafe_allow_html=True)
+    history = st.session_state.get("scan_history") or []
+    summary = ss.summarise(history)
+    st.markdown("<span class='demo-chip'>LIVE SESSION DATA · YOUR SCANS ONLY</span>", unsafe_allow_html=True)
     cols = st.columns(4, gap="medium")
-    cards = [
-        ("TOTAL SCANS", DEMO_METRICS["scans"], "Synthetic preview volume", "#8b7cff"),
-        ("THREATS FLAGGED", DEMO_METRICS["threats"], "Synthetic preview count", "#ff6e83"),
-        ("AVERAGE RISK", DEMO_METRICS["avg_risk"], "Synthetic preview average", "#f6bd60"),
-        ("SERVICE TARGET", DEMO_METRICS["uptime"], "Illustrative target only", "#57d6a1"),
-    ]
-    for col, (label, value, foot, accent) in zip(cols, cards):
+    for col, (label, value, foot, accent) in zip(cols, ss.cards(summary, ss.load_eval_summary())):
         with col:
             st.markdown(metric_card(label, value, foot, accent), unsafe_allow_html=True)
 
-    st.markdown("<div class='section-head'><div class='section-title'>Detection activity</div><div class='section-meta'>SAMPLE SERIES · LAST 7 DAYS</div></div>", unsafe_allow_html=True)
+    st.markdown("<div class='section-head'><div class='section-title'>Detection activity</div><div class='section-meta'>THIS SESSION</div></div>", unsafe_allow_html=True)
     chart_col, donut_col = st.columns([1.65, 1], gap="large")
     with chart_col:
-        # Clearly synthetic sample series for the dashboard preview.
-        days = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
-        safe = [182, 205, 194, 231, 218, 247, 239]
-        flagged = [24, 31, 28, 39, 34, 42, 37]
-        fig = go.Figure()
-        fig.add_trace(go.Scatter(x=days, y=safe, name="Low-risk", mode="lines+markers", line=dict(color="#53d8e8", width=3), marker=dict(size=7), fill="tozeroy", fillcolor="rgba(83,216,232,.08)"))
-        fig.add_trace(go.Scatter(x=days, y=flagged, name="Flagged", mode="lines+markers", line=dict(color="#ff6e83", width=3), marker=dict(size=7), fill="tozeroy", fillcolor="rgba(255,110,131,.08)"))
-        fig = plot_layout(fig, 300)
-        fig.update_layout(hovermode="x unified", xaxis_title="Day of week", yaxis_title="Scans per day (sample)",
-                          legend=dict(orientation="h", x=1, xanchor="right", y=1.02, yanchor="bottom", font=dict(size=12)),
-                          margin=dict(l=8, r=8, t=34, b=8))
-        st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False, "responsive": True})
+        if history:
+            ordered = list(reversed(history))
+            fig = go.Figure(go.Scatter(
+                x=list(range(1, len(ordered) + 1)), y=[h["risk"] for h in ordered], mode="lines+markers",
+                line=dict(color="#53d8e8", width=3),
+                marker=dict(size=8, color=[ss.VERDICT_COLOUR[h["verdict"]] for h in ordered]),
+                text=[html.escape(h["url"]) for h in ordered],
+                hovertemplate="%{text}<br>Risk %{y:.1f}%<extra></extra>"))
+            fig = plot_layout(fig, 300)
+            fig.update_layout(showlegend=False, xaxis_title="Scan number (oldest to newest)", yaxis_title="Risk score (%)",
+                              margin=dict(l=8, r=8, t=34, b=8))
+            fig.update_yaxes(range=[0, 100])
+            fig.add_hline(y=85, line_dash="dot", line_color="rgba(255,110,131,.5)", annotation_text="phishing band", annotation_font_color="#ff91a0")
+            fig.add_hline(y=40, line_dash="dot", line_color="rgba(83,216,232,.45)", annotation_text="legitimate band", annotation_font_color="#7fe3ef")
+            st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False, "responsive": True})
+        else:
+            st.markdown("<div class='surface'><div class='empty-state'>No scans yet.<br>Run a scan in Live scanner and its risk score will be charted here.</div></div>", unsafe_allow_html=True)
     with donut_col:
-        donut = go.Figure(go.Pie(labels=["Low risk · 71%", "Elevated · 18%", "High risk · 11%"], values=[71, 18, 11], hole=.74, sort=False, marker=dict(colors=["#53d8e8", "#8b7cff", "#ff6e83"], line=dict(color="#111722", width=3)), textinfo="none", hovertemplate="%{label}<extra></extra>"))
-        donut = plot_layout(donut, 300)
-        donut.update_layout(showlegend=True, legend=dict(orientation="h", x=0.5, xanchor="center", y=-.04, yanchor="top", font=dict(size=12)),
-                            margin=dict(l=8, r=8, t=14, b=46),
-                            annotations=[dict(text="Share of<br>sample scans", x=.5, y=.5, showarrow=False, font=dict(size=14, color="#edf2fb", family="DM Sans"))])
-        st.plotly_chart(donut, use_container_width=True, config={"displayModeBar": False, "responsive": True})
+        if history:
+            present = [v for v in ss.VERDICTS if summary["counts"][v]]
+            total = summary["total"]
+            donut = go.Figure(go.Pie(
+                labels=[f"{ss.VERDICT_LABEL[v]} · {summary['counts'][v]}" for v in present],
+                values=[summary["counts"][v] for v in present], hole=.74, sort=False,
+                marker=dict(colors=[ss.VERDICT_COLOUR[v] for v in present], line=dict(color="#111722", width=3)),
+                textinfo="none", hovertemplate="%{label} (%{percent})<extra></extra>"))
+            donut = plot_layout(donut, 300)
+            donut.update_layout(showlegend=True, legend=dict(orientation="h", x=0.5, xanchor="center", y=-.04, yanchor="top", font=dict(size=12)),
+                                margin=dict(l=8, r=8, t=14, b=46),
+                                annotations=[dict(text=f"{total}<br>scans", x=.5, y=.5, showarrow=False, font=dict(size=16, color="#edf2fb", family="DM Sans"))])
+            st.plotly_chart(donut, use_container_width=True, config={"displayModeBar": False, "responsive": True})
+        else:
+            st.markdown("<div class='surface'><div class='empty-state'>Verdict mix appears<br>after your first scan.</div></div>", unsafe_allow_html=True)
 
     st.markdown("<div class='section-head'><div class='section-title'>Intelligence layers</div><div class='section-meta'>CURRENT MODEL CONFIGURATION</div></div>", unsafe_allow_html=True)
     layer_cols = st.columns(3, gap="medium")
@@ -428,6 +434,7 @@ elif page == "Live scanner":
                 scan_data = scan_website(clean_url, want_preview)
             st.session_state.pop("last_reports", None)
             st.session_state["last_scan"] = scan_data
+            st.session_state["scan_history"] = ss.record_scan(st.session_state.get("scan_history"), scan_data, clean_url)
             st.session_state["last_submitted_url"] = clean_url
             st.session_state.pop("last_scan_error", None)
         except (ValueError, RuntimeError) as exc:
@@ -522,4 +529,4 @@ elif page == "Model intelligence":
 # ============================================================
 # 9. FOOTER
 # ============================================================
-st.markdown("<div class='notice'>CompPhish is a research prototype. Model outputs are probabilistic estimates, not a guarantee of website safety. Dashboard overview figures are synthetic preview data; live scan results are returned by your configured FastAPI model.</div>", unsafe_allow_html=True)
+st.markdown("<div class='notice'>CompPhish is a research prototype. Model outputs are probabilistic estimates, not a guarantee of website safety. Overview figures count only the scans you run in this session; live scan results are returned by your configured FastAPI model.</div>", unsafe_allow_html=True)

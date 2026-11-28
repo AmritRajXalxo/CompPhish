@@ -214,3 +214,7 @@ Input columns: `url`, `label` (1 = phishing), the six HTML feature columns plus 
 in `requirements.txt`, compare v2 against the current model with `scripts/evaluate_live.py`, and
 copy it over `compphish_hybrid_model.joblib` only if the live results are better. If the bundle
 contains `bands`, the app uses them; otherwise it keeps 0.40 / 0.85.
+
+## Overview numbers
+
+The Overview page shows only real information: the scans you run in the current browser session (count, flagged, average risk, a risk chart with the 0.40 and 0.85 bands, and the verdict mix). Before any scan it shows "No scans yet". To show measured accuracy, run `scripts/evaluate_live.py` and copy `eval_out/summary.json` to `models/evaluation_summary.json`.
