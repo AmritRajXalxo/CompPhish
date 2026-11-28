@@ -218,3 +218,7 @@ contains `bands`, the app uses them; otherwise it keeps 0.40 / 0.85.
 ## Overview numbers
 
 The Overview page shows only real information: the scans you run in the current browser session (count, flagged, average risk, a risk chart with the 0.40 and 0.85 bands, and the verdict mix). Before any scan it shows "No scans yet". To show measured accuracy, run `scripts/evaluate_live.py` and copy `eval_out/summary.json` to `models/evaluation_summary.json`.
+
+## Getting URLs to test
+
+`python scripts/fresh_phish_urls.py` prints current phishing URLs from the OpenPhish feed, keeping only hosts whose name still resolves (many entries are dead within hours). It does not connect to the sites. Output is defanged (`hxxp`, `[.]`) so it cannot be clicked by accident; the scanner box accepts defanged text as it is. Never open these addresses in a browser.
