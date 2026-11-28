@@ -207,7 +207,7 @@ def scan_website(request: ScanRequest):
         with ThreadPoolExecutor(max_workers=6) as pool:
             f_trust = pool.submit(assess_trust, request.url, final_url)
             f_tls = pool.submit(tls_details, host)
-            f_feeds = pool.submit(threat_feeds, final_url)
+            f_feeds = pool.submit(threat_feeds, final_url, (request.url,))
             f_loc = pool.submit(server_location, host)
             f_net = pool.submit(network_footprint, html, final_url)
             behaviour = page_behaviour(html, final_url)
