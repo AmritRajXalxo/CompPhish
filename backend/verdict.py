@@ -9,6 +9,14 @@ SEVERE = {"high"}
 CAUTION = {"medium", "high"}
 
 
+def _is_tenant_subdomain(trust: dict) -> bool:
+    """True when the host is a subdomain other than www under its registered domain."""
+    host, reg = (trust.get("host") or ""), (trust.get("registered_domain") or "")
+    if not host or not reg or host == reg:
+        return False
+    return host != "www." + reg
+
+
 def compose_verdict(result: dict, trust: dict, feeds: dict, behaviour: dict, tls: dict, brand: dict | None = None) -> dict:
     out = apply_trust_adjustment(result, trust)  # sets model_prediction, trust_signals, note
     model_pred = out["model_prediction"]
@@ -27,6 +35,20 @@ def compose_verdict(result: dict, trust: dict, feeds: dict, behaviour: dict, tls
     elif model_pred == "PHISHING" and out["prediction"] == "NEEDS_REVIEW" and max_sev in SEVERE:
         out["prediction"] = "PHISHING"
         note = "The domain is established, but the page behaves suspiciously (see page behaviour), so the phishing verdict is kept."
+    # 2b. A login form on a subdomain of an established domain is how phishing on
+    #     hosting platforms looks: the parent domain's age says nothing about it.
+    elif (
+        model_pred == "PHISHING"
+        and out["prediction"] == "NEEDS_REVIEW"
+        and has_pw
+        and _is_tenant_subdomain(trust)
+    ):
+        out["prediction"] = "PHISHING"
+        note = (
+            f"The parent domain {trust.get('registered_domain')} is established, but this page asks for a "
+            f"password on a subdomain ({trust.get('host')}), which anyone can create on many platforms. "
+            f"The phishing verdict is kept."
+        )
     # 3. Upgrade an uncertain result for an established, well-behaved site.
     elif (
         model_pred == "NEEDS_REVIEW"

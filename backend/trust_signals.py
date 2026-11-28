@@ -45,6 +45,12 @@ SHARED_HOSTING_SUFFIXES = {
     "square.site", "myshopify.com", "webflow.io", "framer.app", "carrd.co",
     "emy.ba", "x10.mx", "infinityfreeapp.com", "rf.gd", "epizy.com",
     "bit.ly", "tinyurl.com", "t.co", "goo.gl", "is.gd", "cutt.ly",
+    # free website builders and page hosts: every customer gets a subdomain
+    "flazio.com", "strikingly.com", "mystrikingly.com", "webnode.com", "webnode.page",
+    "jimdosite.com", "jimdofree.com", "site123.me", "yolasite.com", "webself.net",
+    "weeblysite.com", "wixstudio.io", "bravesites.com", "tumblr.com", "notion.site",
+    "typedream.app", "softr.app", "bubbleapps.io", "teachable.com", "sharemyhtml.com",
+    "000webhostapp.com", "hpage.com", "sitey.com", "page.link", "my.canva.site",
 }
 
 # Common two-level public suffixes (approximation without the full PSL).

@@ -104,3 +104,60 @@ def test_reports_validation_and_rate_limit(tmp_path, monkeypatch):
         rs.add_report("https://a.com/", "safe", "", "c"); assert False
     except PermissionError:
         pass
+
+
+# ---- feed matching and tenant subdomains (found by scanning a live phishing page) ----
+import time as _time
+
+
+def _feed(urls=(), hosts=()):
+    si._feed_cache.update(at=_time.time(), urls={si._norm(u) for u in urls}, hosts={si._host(u) for u in hosts}, ok=True)
+
+
+def test_www_and_scheme_do_not_hide_a_listing():
+    _feed(urls=["http://www.hispeedupcmail.flazio.com"], hosts=["http://www.hispeedupcmail.flazio.com"])
+    # the app lands on https and without www after redirects
+    assert si.threat_feeds("https://hispeedupcmail.flazio.com/")["overall"] == "match"
+
+
+def test_submitted_url_is_checked_as_well_as_final_url():
+    _feed(urls=["http://evil.example/login"], hosts=["http://evil.example/login"])
+    assert si.threat_feeds("https://other.example/home")["overall"] == "no_match"
+    assert si.threat_feeds("https://other.example/home", ("http://evil.example/login",))["overall"] == "match"
+
+
+def test_tenant_subdomain_listing_matches_but_platform_address_does_not():
+    _feed(urls=["https://abc.blogspot.com/x"], hosts=["https://abc.blogspot.com/x", "https://docs.google.com/forms/x"])
+    assert si.threat_feeds("https://abc.blogspot.com/other")["overall"] == "match"      # that tenant is listed
+    assert si.threat_feeds("https://docs.google.com/document/safe")["overall"] == "no_match"  # platform itself is not
+
+
+def test_unlisted_host_is_no_match():
+    _feed(urls=["http://evil.example/a"], hosts=["http://evil.example/a"])
+    assert si.threat_feeds("https://fine.example/")["overall"] == "no_match"
+
+
+TENANT = {"established": True, "domain_age_days": 5872, "registered_domain": "somehost.com",
+          "host": "hispeedupcmail.somehost.com", "tls_valid": True}
+LOGIN = {"status": "ok", "max_severity": "info", "has_password_form": True, "findings": []}
+
+
+def test_login_form_on_subdomain_of_established_domain_stays_phishing():
+    r = compose_verdict(_res("PHISHING"), TENANT, NOFEED, LOGIN, TLS)
+    assert r["prediction"] == "PHISHING" and "subdomain" in r["decision_note"]
+
+
+def test_established_apex_or_www_still_downgraded():
+    for host in ("somehost.com", "www.somehost.com"):
+        t = dict(TENANT, host=host)
+        assert compose_verdict(_res("PHISHING"), t, NOFEED, LOGIN, TLS)["prediction"] == "NEEDS_REVIEW"
+
+
+def test_subdomain_without_password_form_still_downgraded():
+    assert compose_verdict(_res("PHISHING"), TENANT, NOFEED, CLEAN, TLS)["prediction"] == "NEEDS_REVIEW"
+
+
+def test_free_builders_are_shared_hosting():
+    from backend.trust_signals import is_shared_hosting
+    assert is_shared_hosting("hispeedupcmail.flazio.com") and is_shared_hosting("us-ledgercom.teachable.com")
+    assert not is_shared_hosting("www.kaggle.com")

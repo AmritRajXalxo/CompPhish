@@ -23,7 +23,7 @@ import time
 from datetime import datetime, timezone
 from urllib.parse import urljoin, urlparse
 
-from backend.trust_signals import is_shared_hosting, registered_domain
+from backend.trust_signals import SHARED_HOSTING_SUFFIXES, is_shared_hosting, registered_domain
 
 TIMEOUT = 5.0
 
@@ -75,9 +75,21 @@ _feed_cache: dict = {"at": 0.0, "urls": set(), "hosts": set(), "ok": False}
 FEED_TTL = 3600
 
 
+def _host(url: str) -> str:
+    """Lower-case host without a leading www., so www.x.com and x.com are the same site."""
+    try:
+        host = (urlparse(url.strip()).hostname or "").lower()
+    except ValueError:
+        return ""
+    return host[4:] if host.startswith("www.") else host
+
+
 def _norm(url: str) -> str:
-    p = urlparse(url.strip())
-    return f"{(p.hostname or '').lower()}{p.path.rstrip('/')}"
+    try:
+        path = urlparse(url.strip()).path.rstrip("/")
+    except ValueError:
+        path = ""
+    return f"{_host(url)}{path}"
 
 
 def _load_openphish() -> bool:
@@ -95,45 +107,59 @@ def _load_openphish() -> bool:
             line = line.strip()
             if line.startswith("http"):
                 urls.add(_norm(line))
-                hosts.add((urlparse(line).hostname or "").lower())
+                hosts.add(_host(line))
         _feed_cache.update(at=now, urls=urls, hosts=hosts, ok=bool(urls))
         return _feed_cache["ok"]
     except Exception:
         return _feed_cache["ok"]
 
 
-def threat_feeds(url: str) -> dict:
-    """status per source: match | no_match | unavailable. no_match is NOT 'safe'."""
-    host = (urlparse(url).hostname or "").lower()
-    sources = []
+def _openphish_status(urls: list[str]) -> str:
+    if not _load_openphish():
+        return "unavailable"
+    for u in urls:
+        host = _host(u)
+        if _norm(u) in _feed_cache["urls"]:
+            return "match"
+        # A listed host counts as a match, except for the platform's own address
+        # (listing docs.google.com must not flag every Google document).
+        if host in _feed_cache["hosts"] and host not in SHARED_HOSTING_SUFFIXES:
+            return "match"
+    return "no_match"
 
-    if _load_openphish():
-        if _norm(url) in _feed_cache["urls"]:
-            st = "match"
-        elif host in _feed_cache["hosts"] and not is_shared_hosting(host):
-            st = "match"
-        else:
-            st = "no_match"
-    else:
-        st = "unavailable"
-    sources.append({"name": "OpenPhish community feed", "status": st})
+
+def _combine(statuses: list[str]) -> str:
+    if "match" in statuses:
+        return "match"
+    return "no_match" if statuses and all(x == "no_match" for x in statuses) else "unavailable"
+
+
+def threat_feeds(url: str, extra_urls: tuple[str, ...] = ()) -> dict:
+    """status per source: match | no_match | unavailable. no_match is NOT 'safe'.
+
+    `extra_urls` are other addresses of the same page (for example the address the user
+    submitted before redirects); a listing for any of them counts."""
+    urls = list(dict.fromkeys([url, *extra_urls]))
+    sources = [{"name": "OpenPhish community feed", "status": _openphish_status(urls)}]
 
     key = os.getenv("URLHAUS_AUTH_KEY")
     if key:
-        try:
-            import httpx
+        results = []
+        for u in urls:
+            try:
+                import httpx
 
-            r = httpx.post(
-                "https://urlhaus-api.abuse.ch/v1/url/",
-                data={"url": url},
-                headers={"Auth-Key": key},
-                timeout=TIMEOUT,
-            )
-            q = r.json().get("query_status") if r.status_code == 200 else None
-            st = "match" if q == "ok" else "no_match" if q == "no_results" else "unavailable"
-        except Exception:
-            st = "unavailable"
-        sources.append({"name": "URLhaus", "status": st})
+                r = httpx.post(
+                    "https://urlhaus-api.abuse.ch/v1/url/",
+                    data={"url": u},
+                    headers={"Auth-Key": key},
+                    timeout=TIMEOUT,
+                )
+                q = r.json().get("query_status") if r.status_code == 200 else None
+                results.append("match" if q == "ok" else "no_match" if q == "no_results" else "unavailable")
+            except Exception:
+                results.append("unavailable")
+        sources.append({"name": "URLhaus", "status": _combine(results)})
 
     gsb = os.getenv("GOOGLE_SAFE_BROWSING_KEY")
     if gsb:
@@ -146,7 +172,7 @@ def threat_feeds(url: str) -> dict:
                     "threatTypes": ["MALWARE", "SOCIAL_ENGINEERING", "UNWANTED_SOFTWARE"],
                     "platformTypes": ["ANY_PLATFORM"],
                     "threatEntryTypes": ["URL"],
-                    "threatEntries": [{"url": url}],
+                    "threatEntries": [{"url": u} for u in urls],
                 },
             }
             r = httpx.post(
