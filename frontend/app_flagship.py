@@ -21,9 +21,11 @@ except ImportError as exc:  # clear setup message if Plotly is not installed
 try:  # Streamlit puts the script folder on sys.path
     import ui_components as ui
     import session_stats as ss
+    import url_input as ui_url
 except ImportError:  # pragma: no cover - e.g. run from another working directory
     from frontend import ui_components as ui
     from frontend import session_stats as ss
+    from frontend import url_input as ui_url
 
 st.set_page_config(
     page_title="CompPhish | Security Intelligence",
@@ -145,12 +147,16 @@ footer {
 # 3. HELPERS
 # ============================================================
 def normalise_url(value: str) -> str:
-    value = value.strip()
+    value = ui_url.refang(value)
     if not value:
         raise ValueError("Enter a website URL to scan.")
     if "://" not in value:
         value = "https://" + value
-    parsed = urlparse(value)
+    try:
+        parsed = urlparse(value)
+        parsed.hostname  # raises ValueError for malformed hosts such as stray brackets
+    except ValueError:
+        raise ValueError("That is not a valid web address. Check for stray brackets or spaces.")
     if parsed.scheme.lower() not in {"http", "https"}:
         raise ValueError("Only HTTP and HTTPS URLs are supported.")
     if not parsed.hostname or "." not in parsed.hostname:
@@ -181,7 +187,7 @@ def scan_website(url: str, include_preview: bool = False) -> dict[str, Any]:
             detail = response.json()
         except ValueError:
             detail = response.text[:500]
-        raise RuntimeError(f"Backend returned HTTP {response.status_code}: {detail}") from exc
+        raise RuntimeError(ui_url.friendly_backend_error(response.status_code, detail)) from exc
     except requests.exceptions.RequestException as exc:
         raise RuntimeError(f"Request failed: {exc}") from exc
 
